@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const razorpay = require('../config/razorpay');
+const getRazorpay = require('../config/razorpay');
 const { Order, Transaction, User } = require('../models');
 const { verifyRazorpaySignature } = require('../utils/helpers');
 const { notifyPaymentEscrowed, notifyPaymentReleased } = require('../utils/notifications');
@@ -16,6 +16,9 @@ const createPaymentOrder = async (req, res) => {
     if (order.status !== 'AWAITING_PAYMENT') {
       return res.status(400).json({ message: 'Order is not awaiting payment' });
     }
+
+    const razorpay = getRazorpay();
+    if (!razorpay) return res.status(503).json({ message: 'Payment gateway not configured. Add Razorpay keys to .env to enable payments.' });
 
     const rzpOrder = await razorpay.orders.create({
       amount: order.total_amount, // already in paise
