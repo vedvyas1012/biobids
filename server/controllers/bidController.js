@@ -1,4 +1,3 @@
-const { Op } = require('sequelize');
 const { Bid, Listing, Order, User } = require('../models');
 const { notifyBidReceived, notifyBidAccepted, notifyBidRejected } = require('../utils/notifications');
 

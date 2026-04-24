@@ -9,7 +9,6 @@ const STEPS = [
   { key: 'AWAITING_PAYMENT', label: 'Awaiting Payment' },
   { key: 'PAYMENT_ESCROWED', label: 'Payment Escrowed' },
   { key: 'IN_TRANSIT', label: 'In Transit' },
-  { key: 'DELIVERED', label: 'Delivered' },
   { key: 'COMPLETED', label: 'Completed' },
 ];
 

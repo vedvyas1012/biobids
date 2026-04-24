@@ -80,13 +80,29 @@ const resolveDispute = async (req, res) => {
     const order = dispute.order;
     if (action === 'release_to_supplier') {
       await order.update({ status: 'COMPLETED' });
-      await Transaction.create({ order_id: order.id, amount: order.total_amount, type: 'RELEASE', status: 'SUCCESS' });
+      await Transaction.create({
+        order_id: order.id,
+        escrow_transaction_id: order.escrow_transaction_id || null,
+        escrow_event: 'admin_release',
+        amount: order.total_amount,
+        type: 'RELEASE',
+        status: 'SUCCESS',
+      });
       await createNotification({ userId: order.supplier_id, title: 'Dispute Resolved — Payment Released', message: resolution, type: 'dispute_resolved', referenceId: order.id });
       await createNotification({ userId: order.buyer_id, title: 'Dispute Resolved', message: resolution, type: 'dispute_resolved', referenceId: order.id });
     } else if (action === 'refund_buyer') {
       await order.update({ status: 'REFUNDED' });
-      await Transaction.create({ order_id: order.id, amount: order.total_amount, type: 'REFUND', status: 'SUCCESS' });
+      await Transaction.create({
+        order_id: order.id,
+        escrow_transaction_id: order.escrow_transaction_id || null,
+        escrow_event: 'admin_refund',
+        amount: order.total_amount,
+        type: 'REFUND',
+        status: 'SUCCESS',
+      });
       await createNotification({ userId: order.buyer_id, title: 'Dispute Resolved — Refund Initiated', message: resolution, type: 'dispute_resolved', referenceId: order.id });
+    } else {
+      return res.status(400).json({ message: 'Invalid action. Use release_to_supplier or refund_buyer.' });
     }
 
     res.json({ message: 'Dispute resolved' });
@@ -170,7 +186,7 @@ const getBuyerAnalytics = async (req, res) => {
       where: { buyer_id: buyerId },
       include: [{ model: Listing, as: 'listing', attributes: ['biomass_type'] }],
     });
-    const totalSpend = orders.filter(o => ['COMPLETED', 'DELIVERED'].includes(o.status))
+    const totalSpend = orders.filter(o => o.status === 'COMPLETED')
       .reduce((s, o) => s + parseInt(o.total_amount), 0);
     const byType = {};
     orders.forEach(o => {

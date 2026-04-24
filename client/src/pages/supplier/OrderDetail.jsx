@@ -36,7 +36,7 @@ export default function SupplierOrderDetail() {
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" /></div>;
   if (!order) return null;
 
-  const steps = ['AWAITING_PAYMENT', 'PAYMENT_ESCROWED', 'IN_TRANSIT', 'DELIVERED', 'COMPLETED'];
+  const steps = ['AWAITING_PAYMENT', 'PAYMENT_ESCROWED', 'IN_TRANSIT', 'COMPLETED'];
   const currentStep = steps.indexOf(order.status);
 
   return (
