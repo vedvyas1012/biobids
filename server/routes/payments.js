@@ -1,11 +1,13 @@
 const router = require('express').Router();
 const { authenticate, requireRole } = require('../middleware/auth');
-const { createPaymentOrder, verifyPayment, releasePayment, getTransactions } = require('../controllers/paymentController');
+const { initiatePayment, getPaymentStatus, handleWebhook, getTransactions } = require('../controllers/paymentController');
+
+// Webhook must be unauthenticated (Escrow.com posts directly)
+router.post('/webhook', handleWebhook);
 
 router.use(authenticate);
-router.post('/create-order', requireRole('buyer'), createPaymentOrder);
-router.post('/verify', requireRole('buyer'), verifyPayment);
-router.post('/release/:order_id', requireRole('admin'), releasePayment);
+router.post('/initiate/:order_id', requireRole('buyer'), initiatePayment);
+router.get('/status/:order_id', getPaymentStatus);
 router.get('/transactions', getTransactions);
 
 module.exports = router;

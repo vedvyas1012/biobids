@@ -5,7 +5,7 @@ const Listing = sequelize.define('Listing', {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
   supplier_id: { type: DataTypes.INTEGER, allowNull: false },
   biomass_type: {
-    type: DataTypes.ENUM('rice_husk', 'sugarcane_bagasse', 'wood_chips', 'cotton_stalks', 'wheat_straw', 'corn_cobs', 'bamboo', 'other'),
+    type: DataTypes.ENUM('rice_husk', 'sugarcane_bagasse', 'wood_chips', 'cotton_stalks', 'wheat_straw', 'corn_cobs', 'bamboo', 'mustard_husk', 'sugarcane_husk', 'peanut_husk', 'other'),
     allowNull: false,
   },
   quantity: { type: DataTypes.DECIMAL(10, 2), allowNull: false, comment: 'Total quantity in tonnes' },

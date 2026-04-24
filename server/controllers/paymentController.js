@@ -1,107 +1,173 @@
-const crypto = require('crypto');
-const getRazorpay = require('../config/razorpay');
 const { Order, Transaction, User } = require('../models');
-const { verifyRazorpaySignature } = require('../utils/helpers');
+const {
+  createEscrowTransaction,
+  getEscrowTransaction,
+  getPaymentLink,
+} = require('../utils/escrowService');
 const { notifyPaymentEscrowed, notifyPaymentReleased } = require('../utils/notifications');
 
 let io;
 const setIo = (socketIo) => { io = socketIo; };
 
-const createPaymentOrder = async (req, res) => {
+/**
+ * POST /api/payments/initiate/:order_id
+ * Buyer initiates escrow — creates Escrow.com transaction, stores ID + payment URL on order.
+ */
+const initiatePayment = async (req, res) => {
   try {
-    const { order_id } = req.body;
-    const order = await Order.findByPk(order_id);
+    const order = await Order.findByPk(req.params.order_id, {
+      include: [
+        { model: User, as: 'buyer' },
+        { model: User, as: 'supplier' },
+      ],
+    });
+
     if (!order) return res.status(404).json({ message: 'Order not found' });
     if (order.buyer_id !== req.user.id) return res.status(403).json({ message: 'Unauthorized' });
     if (order.status !== 'AWAITING_PAYMENT') {
       return res.status(400).json({ message: 'Order is not awaiting payment' });
     }
 
-    const razorpay = getRazorpay();
-    if (!razorpay) return res.status(503).json({ message: 'Payment gateway not configured. Add Razorpay keys to .env to enable payments.' });
+    // Convert paise → USD (1 USD ≈ 83 INR; amount stored in paise = INR/100)
+    const amountINR = order.total_amount / 100;
+    const amountUSD = parseFloat((amountINR / 83).toFixed(2));
 
-    const rzpOrder = await razorpay.orders.create({
-      amount: order.total_amount, // already in paise
-      currency: 'INR',
-      receipt: `order_${order.id}`,
-      notes: { biobids_order_id: order.id },
+    const escrowTxn = await createEscrowTransaction({
+      buyerEmail: order.buyer.email,
+      sellerEmail: order.supplier.email,
+      description: `BioBids Order #${order.id}`,
+      amountUSD,
     });
 
-    await order.update({ razorpay_order_id: rzpOrder.id });
+    const paymentUrl = await getPaymentLink(escrowTxn.id);
+
+    await order.update({
+      escrow_transaction_id: String(escrowTxn.id),
+      escrow_payment_url: paymentUrl,
+    });
+
     await Transaction.create({
-      order_id: order.id, razorpay_order_id: rzpOrder.id,
-      amount: order.total_amount, type: 'ESCROW', status: 'PENDING',
+      order_id: order.id,
+      escrow_transaction_id: String(escrowTxn.id),
+      escrow_event: 'TRANSACTION_CREATED',
+      amount: order.total_amount,
+      type: 'ESCROW',
+      status: 'PENDING',
     });
 
     res.json({
-      razorpay_order_id: rzpOrder.id,
-      amount: rzpOrder.amount,
-      currency: rzpOrder.currency,
-      key_id: process.env.RAZORPAY_KEY_ID,
+      escrow_transaction_id: escrowTxn.id,
+      payment_url: paymentUrl,
+      amount_usd: amountUSD,
     });
   } catch (err) {
+    console.error('initiatePayment error:', err.response?.data || err.message);
     res.status(500).json({ message: err.message });
   }
 };
 
-const verifyPayment = async (req, res) => {
+/**
+ * GET /api/payments/status/:order_id
+ * Returns current Escrow.com transaction status for an order.
+ */
+const getPaymentStatus = async (req, res) => {
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-
-    const valid = verifyRazorpaySignature(razorpay_order_id, razorpay_payment_id, razorpay_signature);
-    if (!valid) return res.status(400).json({ message: 'Invalid payment signature' });
-
-    const order = await Order.findOne({ where: { razorpay_order_id } });
+    const order = await Order.findByPk(req.params.order_id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
-    await order.update({ status: 'PAYMENT_ESCROWED', escrow_payment_id: razorpay_payment_id });
-
-    await Transaction.update(
-      { razorpay_payment_id, razorpay_signature, status: 'SUCCESS' },
-      { where: { razorpay_order_id } }
-    );
-
-    await notifyPaymentEscrowed(order.supplier_id, order.id, order.total_amount);
-
-    if (io) {
-      io.to(`user_${order.supplier_id}`).emit('payment_escrowed', { orderId: order.id });
+    // Auth: buyer, supplier, or admin
+    if (req.user.role !== 'admin' && order.buyer_id !== req.user.id && order.supplier_id !== req.user.id) {
+      return res.status(403).json({ message: 'Unauthorized' });
     }
 
-    res.json({ message: 'Payment verified and escrowed', order_id: order.id });
+    if (!order.escrow_transaction_id) {
+      return res.json({ status: order.status, escrow_transaction: null });
+    }
+
+    const escrowTxn = await getEscrowTransaction(order.escrow_transaction_id);
+    res.json({ status: order.status, escrow_transaction: escrowTxn });
   } catch (err) {
+    console.error('getPaymentStatus error:', err.response?.data || err.message);
     res.status(500).json({ message: err.message });
   }
 };
 
-const releasePayment = async (req, res) => {
+/**
+ * POST /api/payments/webhook
+ * Escrow.com webhook — updates order status based on escrow events.
+ */
+const handleWebhook = async (req, res) => {
   try {
-    const order = await Order.findByPk(req.params.order_id, {
-      include: [{ model: User, as: 'supplier' }],
-    });
-    if (!order) return res.status(404).json({ message: 'Order not found' });
-    if (!['DELIVERED', 'PAYMENT_ESCROWED'].includes(order.status) && req.user.role !== 'admin') {
-      return res.status(400).json({ message: 'Cannot release payment at this stage' });
+    const event = req.body;
+
+    // Escrow.com sends { action: { type: ... }, id: transactionId }
+    const transactionId = String(event.id || event.transaction_id || '');
+    const actionType = event.action?.type || event.type || '';
+
+    if (!transactionId) return res.status(400).json({ message: 'Missing transaction id' });
+
+    const order = await Order.findOne({ where: { escrow_transaction_id: transactionId } });
+    if (!order) return res.status(404).json({ message: 'Order not found for transaction' });
+
+    let newStatus = null;
+
+    switch (actionType) {
+      case 'buyer_paid':
+      case 'payment_received':
+        newStatus = 'PAYMENT_ESCROWED';
+        break;
+      case 'ship_merchandise':
+        newStatus = 'IN_TRANSIT';
+        break;
+      case 'receive_merchandise':
+        newStatus = 'DELIVERED';
+        break;
+      case 'completed':
+        newStatus = 'COMPLETED';
+        break;
+      case 'dispute_opened':
+        newStatus = 'DISPUTED';
+        break;
+      default:
+        // Unknown event — log but acknowledge
+        console.log('Unhandled Escrow webhook event:', actionType);
     }
 
-    // In production: use Razorpay Payouts API to transfer to supplier
-    // For demo/test: just mark as completed
-    await order.update({ status: 'COMPLETED' });
-    await Transaction.create({
-      order_id: order.id,
-      amount: order.total_amount,
-      type: 'RELEASE',
-      status: 'SUCCESS',
-    });
+    if (newStatus) {
+      await order.update({ status: newStatus });
+      await Transaction.create({
+        order_id: order.id,
+        escrow_transaction_id: transactionId,
+        escrow_event: actionType,
+        amount: order.total_amount,
+        type: newStatus === 'COMPLETED' ? 'RELEASE' : 'ESCROW',
+        status: 'SUCCESS',
+      });
 
-    await notifyPaymentReleased(order.supplier_id, order.id, order.total_amount);
-    if (io) io.to(`user_${order.supplier_id}`).emit('payment_released', { orderId: order.id });
+      if (newStatus === 'PAYMENT_ESCROWED') {
+        await notifyPaymentEscrowed(order.supplier_id, order.id, order.total_amount);
+        if (io) io.to(`user_${order.supplier_id}`).emit('payment_escrowed', { orderId: order.id });
+      }
 
-    res.json({ message: 'Payment released to supplier' });
+      if (newStatus === 'COMPLETED') {
+        await notifyPaymentReleased(order.supplier_id, order.id, order.total_amount);
+        if (io) io.to(`user_${order.supplier_id}`).emit('payment_released', { orderId: order.id });
+      }
+
+      if (io) io.to(`order_${order.id}`).emit('order_status_updated', { orderId: order.id, status: newStatus });
+    }
+
+    res.json({ received: true });
   } catch (err) {
+    console.error('webhook error:', err.message);
     res.status(500).json({ message: err.message });
   }
 };
 
+/**
+ * GET /api/payments/transactions
+ * List transactions for the authenticated user (or all for admin).
+ */
 const getTransactions = async (req, res) => {
   try {
     const where = {};
@@ -113,7 +179,9 @@ const getTransactions = async (req, res) => {
       where.order_id = orders.map((o) => o.id);
     }
     const txns = await Transaction.findAll({
-      where, include: [{ model: Order, as: 'order' }], order: [['created_at', 'DESC']],
+      where,
+      include: [{ model: Order, as: 'order' }],
+      order: [['created_at', 'DESC']],
     });
     res.json(txns);
   } catch (err) {
@@ -121,4 +189,4 @@ const getTransactions = async (req, res) => {
   }
 };
 
-module.exports = { createPaymentOrder, verifyPayment, releasePayment, getTransactions, setIo };
+module.exports = { initiatePayment, getPaymentStatus, handleWebhook, getTransactions, setIo };
