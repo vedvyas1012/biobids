@@ -35,7 +35,7 @@ const run = async () => {
   console.log('  2. Go to: Account Settings → API → Webhooks');
   console.log('  3. Add the following URL:');
   console.log(`\n     ${webhookUrl}\n`);
-  console.log('  4. Select events: payment_approved, ship_merchandise, delivery_received, delivery_rejected, refund_approved');
+  console.log('  4. Select events: transaction.payment_approved, transaction.ship, transaction.accept, transaction.reject, transaction.refund_resolved, transaction.cancel');
 
   process.exit(0);
 };

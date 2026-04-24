@@ -1,5 +1,17 @@
 const jwt = require('jsonwebtoken');
 
+/**
+ * Split a full name into firstName / lastName.
+ * Single-word names produce a blank lastName rather than duplicating the first name.
+ */
+const splitName = (fullName = '') => {
+  const parts = fullName.trim().split(/\s+/);
+  return {
+    firstName: parts[0] || '',
+    lastName:  parts.length > 1 ? parts.slice(1).join(' ') : '',
+  };
+};
+
 const generateTokens = (user) => {
   const payload = { id: user.id, role: user.role, email: user.email };
   const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '15m' });
@@ -18,4 +30,4 @@ const paginate = (page = 1, limit = 10) => {
   return { limit: parseInt(limit), offset };
 };
 
-module.exports = { generateTokens, formatAmount, paiseToRupees, rupeesToPaise, paginate };
+module.exports = { generateTokens, splitName, formatAmount, paiseToRupees, rupeesToPaise, paginate };

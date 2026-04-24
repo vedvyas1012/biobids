@@ -108,6 +108,36 @@ export default function SupplierOrderDetail() {
               {order.auto_release_at && <p className="text-xs text-blue-500 mt-2">Auto-release: {new Date(order.auto_release_at).toLocaleDateString()}</p>}
             </div>
           )}
+
+          {order.status === 'COMPLETED' && (
+            <div className="card bg-green-50 border border-green-200">
+              <p className="text-green-800 font-semibold mb-1">Payment Released</p>
+              <p className="text-sm text-green-600">
+                ₹{(order.total_amount / 100).toLocaleString('en-IN')} has been released to your account via Escrow.com.
+              </p>
+            </div>
+          )}
+
+          {order.status === 'DISPUTED' && (
+            <div className="card bg-red-50 border border-red-200">
+              <p className="text-red-800 font-semibold mb-1">Dispute Under Review</p>
+              <p className="text-sm text-red-600">
+                The buyer has raised a dispute. Admin and Escrow.com will resolve this within 48 hours.
+              </p>
+              {order.dispute?.resolution && (
+                <p className="text-sm text-gray-700 mt-2 bg-white p-2 rounded">{order.dispute.resolution}</p>
+              )}
+            </div>
+          )}
+
+          {order.status === 'REFUNDED' && (
+            <div className="card bg-gray-50 border border-gray-200">
+              <p className="text-gray-800 font-semibold mb-1">Order Refunded</p>
+              <p className="text-sm text-gray-600">
+                The dispute was resolved in the buyer's favour. Payment has been returned to the buyer via Escrow.com.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

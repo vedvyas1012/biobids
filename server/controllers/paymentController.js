@@ -6,6 +6,7 @@ const {
   createEscrowCustomer,
   agreeToTransaction,
 } = require('../utils/escrowService');
+const { splitName } = require('../utils/helpers');
 const { notifyPaymentEscrowed, notifyPaymentReleased } = require('../utils/notifications');
 
 let io;
@@ -55,18 +56,19 @@ const initiatePayment = async (req, res) => {
     const listing  = order.bid?.listing;
 
     // 1. Ensure both parties exist as Escrow.com customers (safe to call repeatedly)
-    const [buyerName, supplierName] = [buyer.name.split(' '), supplier.name.split(' ')];
+    const buyerName    = splitName(buyer.name);
+    const supplierName = splitName(supplier.name);
     await Promise.all([
       createEscrowCustomer({
         email:     buyer.email,
-        firstName: buyerName[0],
-        lastName:  buyerName.slice(1).join(' ') || buyerName[0],
+        firstName: buyerName.firstName,
+        lastName:  buyerName.lastName,
         phone:     buyer.phone,
       }),
       createEscrowCustomer({
         email:     supplier.email,
-        firstName: supplierName[0],
-        lastName:  supplierName.slice(1).join(' ') || supplierName[0],
+        firstName: supplierName.firstName,
+        lastName:  supplierName.lastName,
         phone:     supplier.phone,
       }),
     ]);
@@ -88,15 +90,16 @@ const initiatePayment = async (req, res) => {
     const escrowTransactionId = String(escrowTxn.id);
     const paymentUrl          = getPaymentLink(escrowTransactionId);
 
-    // 3. Supplier auto-agrees to transaction terms on behalf of platform
-    await agreeToTransaction(escrowTransactionId, supplier.email).catch((e) => {
-      console.error('Supplier agreeToTransaction failed (non-fatal):', e.response?.data || e.message);
-    });
-
-    // 4. Persist to order
+    // 3. Persist escrow ID immediately — before agree so the duplicate guard works
+    //    even if the subsequent agree/transaction steps fail and are retried.
     await order.update({
       escrow_transaction_id: escrowTransactionId,
       escrow_payment_url:    paymentUrl,
+    });
+
+    // 4. Supplier auto-agrees to transaction terms on behalf of platform
+    await agreeToTransaction(escrowTransactionId, supplier.email).catch((e) => {
+      console.error('Supplier agreeToTransaction failed (non-fatal):', e.response?.data || e.message);
     });
 
     await Transaction.create({
@@ -147,7 +150,10 @@ const getPaymentStatus = async (req, res) => {
 /**
  * POST /api/payments/webhook
  * Escrow.com webhook receiver.
- * Payload: { "event": "payment_approved", "event_type": "transaction", "transaction_id": 12345 }
+ * Payload: { "event": "transaction.payment_approved", "event_type": "transaction", "transaction_id": 12345 }
+ * Official event catalog (transaction.* format):
+ *   transaction.payment_approved | transaction.ship | transaction.accept | transaction.complete
+ *   transaction.reject | transaction.refund_resolved | transaction.cancel
  *
  * IMPORTANT: Always verify by fetching the transaction from Escrow.com before updating DB.
  * Always return HTTP 200 (even unhandled events) to prevent Escrow.com retry storms.
@@ -181,37 +187,47 @@ const handleWebhook = async (req, res) => {
     }
 
     // Idempotency: skip if order is already at a terminal status
-    const TERMINAL = ['COMPLETED', 'CANCELLED', 'REFUNDED'];
+    const TERMINAL = ['COMPLETED', 'CANCELLED', 'REFUNDED', 'DISPUTED'];
     if (TERMINAL.includes(order.status)) {
       console.log(`[Webhook] Order ${order.id} already terminal (${order.status}), skipping`);
       return;
+    }
+
+    // m5: Log a warning if escrow state seems inconsistent with the event
+    if (escrowTxn && escrowTxn.id) {
+      console.log(`[Webhook] Escrow status for txn ${transactionId}: ${escrowTxn.status || 'unknown'} (event: ${eventName})`);
     }
 
     let newStatus = null;
     let txnType   = 'ESCROW';
 
     switch (eventName) {
-      case 'payment_approved':
+      case 'transaction.payment_approved':
         newStatus = 'PAYMENT_ESCROWED';
         txnType   = 'ESCROW';
         break;
-      case 'ship_merchandise':
+      case 'transaction.ship':
         if (order.status === 'IN_TRANSIT') return; // already set by dispatchOrder
         newStatus = 'IN_TRANSIT';
         txnType   = 'ESCROW';
         break;
-      case 'delivery_received':
+      case 'transaction.accept':
+      case 'transaction.complete':
         if (order.status === 'COMPLETED') return; // already handled by confirmDelivery
         newStatus = 'COMPLETED';
         txnType   = 'RELEASE';
         break;
-      case 'delivery_rejected':
+      case 'transaction.reject':
         newStatus = 'DISPUTED';
         txnType   = 'ESCROW';
         break;
-      case 'refund_approved':
+      case 'transaction.refund_resolved':
         newStatus = 'REFUNDED';
         txnType   = 'REFUND';
+        break;
+      case 'transaction.cancel':
+        newStatus = 'CANCELLED';
+        txnType   = 'ESCROW';
         break;
       default:
         console.log('[Webhook] Unhandled event:', eventName);
@@ -239,7 +255,10 @@ const handleWebhook = async (req, res) => {
         if (io) io.to(`user_${order.supplier_id}`).emit('payment_released', { orderId: order.id });
       }
 
-      if (io) io.to(`order_${order.id}`).emit('order_status_updated', { orderId: order.id, status: newStatus });
+      if (io) {
+        io.to(`user_${order.buyer_id}`).emit('order_status_updated', { orderId: order.id, status: newStatus });
+        io.to(`user_${order.supplier_id}`).emit('order_status_updated', { orderId: order.id, status: newStatus });
+      }
       console.log(`[Webhook] Order ${order.id} → ${newStatus} (event: ${eventName})`);
     }
   } catch (err) {

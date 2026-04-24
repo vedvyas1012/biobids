@@ -62,7 +62,7 @@ export default function BuyerOrderDetail() {
     try {
       await ordersAPI.confirmDelivery(id);
       toast.success('Delivery confirmed! Payment released to supplier.');
-      reload();
+      await reload();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed');
     }
@@ -76,7 +76,7 @@ export default function BuyerOrderDetail() {
       fd.append('reason', disputeReason);
       await ordersAPI.dispute(id, fd);
       toast.success('Dispute raised. Admin will review within 48 hours.');
-      reload();
+      await reload();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed');
     } finally {
@@ -93,7 +93,10 @@ export default function BuyerOrderDetail() {
   }
   if (!order) return null;
 
-  const currentStep = STEPS.findIndex((s) => s.key === order.status);
+  // findIndex returns -1 for terminal states not in STEPS (DISPUTED, REFUNDED).
+  // Clamp to IN_TRANSIT (index 2) so the timeline always renders correctly for those states.
+  const rawStep = STEPS.findIndex((s) => s.key === order.status);
+  const currentStep = rawStep === -1 ? 2 : rawStep;
 
   return (
     <div className="min-h-screen bg-gray-50">

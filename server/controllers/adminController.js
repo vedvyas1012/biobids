@@ -1,6 +1,7 @@
 const { Op, fn, col, literal } = require('sequelize');
 const { User, Listing, Order, Transaction, Dispute, Bid, Notification } = require('../models');
 const { createNotification } = require('../utils/notifications');
+const { acceptTransaction, acceptReturnAndRefund } = require('../utils/escrowService');
 
 const getUsers = async (req, res) => {
   try {
@@ -72,13 +73,25 @@ const getDisputes = async (req, res) => {
 const resolveDispute = async (req, res) => {
   try {
     const { resolution, action } = req.body; // action: 'release_to_supplier' | 'refund_buyer'
-    const dispute = await Dispute.findByPk(req.params.id, { include: [{ model: Order, as: 'order' }] });
+    const dispute = await Dispute.findByPk(req.params.id, {
+      include: [{ model: Order, as: 'order' }],
+    });
     if (!dispute) return res.status(404).json({ message: 'Dispute not found' });
 
     await dispute.update({ status: 'RESOLVED', resolution, admin_id: req.user.id });
 
     const order = dispute.order;
+
     if (action === 'release_to_supplier') {
+      // Unfreeze funds on Escrow.com — accept on buyer's behalf so payment flows to supplier
+      if (order.escrow_transaction_id) {
+        const buyer = await User.findByPk(order.buyer_id, { attributes: ['email'] });
+        if (buyer) {
+          await acceptTransaction(order.escrow_transaction_id, buyer.email).catch((e) => {
+            console.error(`[Admin] acceptTransaction failed for order ${order.id}:`, e.response?.data || e.message);
+          });
+        }
+      }
       await order.update({ status: 'COMPLETED' });
       await Transaction.create({
         order_id: order.id,
@@ -91,6 +104,15 @@ const resolveDispute = async (req, res) => {
       await createNotification({ userId: order.supplier_id, title: 'Dispute Resolved — Payment Released', message: resolution, type: 'dispute_resolved', referenceId: order.id });
       await createNotification({ userId: order.buyer_id, title: 'Dispute Resolved', message: resolution, type: 'dispute_resolved', referenceId: order.id });
     } else if (action === 'refund_buyer') {
+      // Trigger refund on Escrow.com — accept return on seller's behalf so funds flow back to buyer
+      if (order.escrow_transaction_id) {
+        const supplier = await User.findByPk(order.supplier_id, { attributes: ['email'] });
+        if (supplier) {
+          await acceptReturnAndRefund(order.escrow_transaction_id, supplier.email).catch((e) => {
+            console.error(`[Admin] acceptReturnAndRefund failed for order ${order.id}:`, e.response?.data || e.message);
+          });
+        }
+      }
       await order.update({ status: 'REFUNDED' });
       await Transaction.create({
         order_id: order.id,
