@@ -41,10 +41,8 @@ async function createEscrowTransaction(order, buyerEmail, sellerEmail, opts = {}
           },
         ],
         fees: [
-          {
-            type: 'escrow',
-            split: 0.5,
-          },
+          { type: 'escrow', payer_customer: buyerEmail,  split: 0.5 },
+          { type: 'escrow', payer_customer: sellerEmail, split: 0.5 },
         ],
       },
     ],

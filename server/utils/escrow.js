@@ -20,31 +20,37 @@ const startEscrowCron = () => {
       });
 
       for (const order of overdueOrders) {
-        // Notify Escrow.com that buyer implicitly accepted (auto-release)
-        if (order.escrow_transaction_id) {
-          const buyer = await User.findByPk(order.buyer_id, { attributes: ['email'] });
-          if (buyer) {
-            await confirmDeliveryEscrow(order.escrow_transaction_id, buyer.email).catch((e) => {
-              console.error(`[Cron] Escrow confirmDelivery failed for order ${order.id}:`, e.response?.data || e.message);
-            });
+        // Isolate each order in its own try/catch so one failure doesn't abort the rest
+        try {
+          // Notify Escrow.com that buyer implicitly accepted (auto-release)
+          if (order.escrow_transaction_id) {
+            const buyer = await User.findByPk(order.buyer_id, { attributes: ['email'] });
+            if (buyer) {
+              await confirmDeliveryEscrow(order.escrow_transaction_id, buyer.email).catch((e) => {
+                console.error(`[Cron] Escrow confirmDelivery failed for order ${order.id}:`, e.response?.data || e.message);
+              });
+            }
           }
-        }
 
-        await order.update({ status: 'COMPLETED' });
-        await Transaction.create({
-          order_id: order.id,
-          escrow_transaction_id: order.escrow_transaction_id || null,
-          escrow_event: 'auto_release',
-          amount: order.total_amount,
-          type: 'RELEASE',
-          status: 'SUCCESS',
-        });
-        await notifyPaymentReleased(order.supplier_id, order.id, order.total_amount);
-        if (io) {
-          io.to(`user_${order.supplier_id}`).emit('payment_released', { orderId: order.id });
-          io.to(`user_${order.buyer_id}`).emit('order_status_updated', { orderId: order.id, status: 'COMPLETED' });
+          await order.update({ status: 'COMPLETED' });
+          await Transaction.create({
+            order_id: order.id,
+            escrow_transaction_id: order.escrow_transaction_id || null,
+            escrow_event: 'auto_release',
+            amount: order.total_amount,
+            type: 'RELEASE',
+            status: 'SUCCESS',
+          });
+          await notifyPaymentReleased(order.supplier_id, order.id, order.total_amount);
+          if (io) {
+            io.to(`user_${order.supplier_id}`).emit('payment_released', { orderId: order.id });
+            io.to(`user_${order.buyer_id}`).emit('order_status_updated', { orderId: order.id, status: 'COMPLETED' });
+          }
+          console.log(`[Cron] Auto-released payment for order ${order.id}`);
+        } catch (orderErr) {
+          // Log and continue — remaining overdue orders must still be processed
+          console.error(`[Cron] Failed to auto-release order ${order.id}:`, orderErr.message);
         }
-        console.log(`[Cron] Auto-released payment for order ${order.id}`);
       }
     } catch (err) {
       console.error('[Cron] Escrow auto-release error:', err.message);
