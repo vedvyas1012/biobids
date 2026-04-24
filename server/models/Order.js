@@ -13,8 +13,8 @@ const Order = sequelize.define('Order', {
     type: DataTypes.ENUM('AWAITING_PAYMENT', 'PAYMENT_ESCROWED', 'IN_TRANSIT', 'DELIVERED', 'COMPLETED', 'DISPUTED', 'CANCELLED', 'REFUNDED'),
     defaultValue: 'AWAITING_PAYMENT',
   },
-  escrow_payment_id: { type: DataTypes.STRING(100), allowNull: true },
-  razorpay_order_id: { type: DataTypes.STRING(100), allowNull: true },
+  escrow_transaction_id: { type: DataTypes.STRING(100), allowNull: true },
+  escrow_payment_url: { type: DataTypes.STRING(500), allowNull: true },
   dispatch_date: { type: DataTypes.DATEONLY, allowNull: true },
   vehicle_number: { type: DataTypes.STRING(20), allowNull: true },
   driver_contact: { type: DataTypes.STRING(15), allowNull: true },
@@ -27,6 +27,10 @@ const Order = sequelize.define('Order', {
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
+  indexes: [
+    // Fast webhook lookup by escrow transaction ID
+    { fields: ['escrow_transaction_id'] },
+  ],
 });
 
 module.exports = Order;

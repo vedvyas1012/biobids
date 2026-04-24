@@ -32,6 +32,9 @@ const seed = async () => {
     { supplier_id: suppliers[2].id, biomass_type: 'wood_chips', quantity: 75, available_quantity: 75, location_state: 'Uttar Pradesh', location_district: 'Lucknow', pincode: '226001', moisture_content: 20, calorific_value: 4200, min_price: 420000, availability_date: '2026-04-30', status: 'BIDDING' },
     { supplier_id: suppliers[2].id, biomass_type: 'cotton_stalks', quantity: 120, available_quantity: 120, location_state: 'Madhya Pradesh', location_district: 'Indore', pincode: '452001', moisture_content: 15, calorific_value: 3600, min_price: 310000, availability_date: '2026-05-15', status: 'ACTIVE' },
     { supplier_id: suppliers[1].id, biomass_type: 'bamboo', quantity: 30, available_quantity: 30, location_state: 'Gujarat', location_district: 'Vadodara', pincode: '390001', moisture_content: 18, calorific_value: 4500, min_price: 500000, availability_date: '2026-05-05', status: 'ACTIVE' },
+    { supplier_id: suppliers[0].id, biomass_type: 'mustard_husk', quantity: 80, available_quantity: 80, location_state: 'Haryana', location_district: 'Hisar', pincode: '125001', moisture_content: 9, calorific_value: 3400, min_price: 260000, availability_date: '2026-05-12', status: 'ACTIVE', description: 'Mustard husk from oil extraction, clean and dry, suitable for boilers.' },
+    { supplier_id: suppliers[2].id, biomass_type: 'sugarcane_husk', quantity: 150, available_quantity: 150, location_state: 'Uttar Pradesh', location_district: 'Gorakhpur', pincode: '273001', moisture_content: 45, calorific_value: 2300, min_price: 190000, availability_date: '2026-05-20', status: 'ACTIVE', description: 'Sugarcane husk (outer dry leaf), baled and ready for transport.' },
+    { supplier_id: suppliers[1].id, biomass_type: 'peanut_husk', quantity: 60, available_quantity: 60, location_state: 'Gujarat', location_district: 'Rajkot', pincode: '360001', moisture_content: 8, calorific_value: 3700, min_price: 300000, availability_date: '2026-05-08', status: 'ACTIVE', description: 'Groundnut shells from oil mill, high calorific value, low ash content.' },
   ]);
 
   // Sample bids on listing[3] (wood chips in BIDDING)
@@ -56,9 +59,9 @@ const seed = async () => {
     bid_id: completedBid.id, listing_id: listings[0].id,
     supplier_id: suppliers[0].id, buyer_id: buyers[2].id,
     quantity: 20, total_amount: 20 * 380000,
-    status: 'COMPLETED', escrow_payment_id: 'pay_test_completed',
+    status: 'COMPLETED', escrow_transaction_id: 'escrow_test_completed',
   });
-  await Transaction.create({ order_id: completedOrder.id, amount: completedOrder.total_amount, type: 'ESCROW', status: 'SUCCESS', razorpay_order_id: 'order_test_1', razorpay_payment_id: 'pay_test_1' });
+  await Transaction.create({ order_id: completedOrder.id, escrow_transaction_id: 'escrow_test_completed', escrow_event: 'buyer_paid', amount: completedOrder.total_amount, type: 'ESCROW', status: 'SUCCESS' });
   await Transaction.create({ order_id: completedOrder.id, amount: completedOrder.total_amount, type: 'RELEASE', status: 'SUCCESS' });
 
   // Sample notification

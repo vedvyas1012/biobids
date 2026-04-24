@@ -1,7 +1,8 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { User } = require('../models');
-const { generateTokens } = require('../utils/helpers');
+const { generateTokens, splitName } = require('../utils/helpers');
+const { createEscrowCustomer } = require('../utils/escrowService');
 
 const register = async (req, res) => {
   try {
@@ -21,6 +22,15 @@ const register = async (req, res) => {
 
     const { token, refreshToken } = generateTokens(user);
     await user.update({ refresh_token: refreshToken });
+
+    // Register user with Escrow.com so they exist before any transaction (non-fatal)
+    const { firstName, lastName } = splitName(user.name);
+    createEscrowCustomer({
+      email: user.email,
+      firstName,
+      lastName,
+      phone: user.phone,
+    }).catch((e) => console.error('[Register] Escrow customer creation failed (non-fatal):', e.message));
 
     res.status(201).json({
       token, refreshToken,

@@ -1,6 +1,6 @@
 const { Order, Bid, Listing, User, Dispute, Transaction } = require('../models');
-const { notifyOrderDispatched, createNotification } = require('../utils/notifications');
-const path = require('path');
+const { notifyOrderDispatched, notifyPaymentReleased, createNotification } = require('../utils/notifications');
+const { markShipped, confirmDeliveryEscrow, rejectDelivery } = require('../utils/escrowService');
 
 let io;
 const setIo = (socketIo) => { io = socketIo; };
@@ -70,8 +70,16 @@ const dispatchOrder = async (req, res) => {
       auto_release_at: autoRelease,
     });
 
+    // Notify Escrow.com that merchandise has been shipped
+    if (order.escrow_transaction_id) {
+      const supplier = await User.findByPk(order.supplier_id, { attributes: ['email'] });
+      await markShipped(order.escrow_transaction_id, supplier.email).catch((e) => {
+        console.error('Escrow markShipped failed (non-fatal):', e.response?.data || e.message);
+      });
+    }
+
     await notifyOrderDispatched(order.buyer_id, order.id, vehicle_number);
-    if (io) io.to(`user_${order.buyer_id}`).emit('order_status_update', { orderId: order.id, status: 'IN_TRANSIT' });
+    if (io) io.to(`user_${order.buyer_id}`).emit('order_status_updated', { orderId: order.id, status: 'IN_TRANSIT' });
 
     res.json({ message: 'Order marked as dispatched', order });
   } catch (err) {
@@ -88,14 +96,41 @@ const confirmDelivery = async (req, res) => {
       return res.status(400).json({ message: 'Order is not in transit' });
     }
 
-    await order.update({ status: 'DELIVERED', delivery_confirmed_at: new Date() });
+    const now = new Date();
 
-    // Auto-release payment
-    const { releasePayment } = require('./paymentController');
-    req.params.order_id = order.id;
-    await releasePayment(req, res);
+    // Tell Escrow.com buyer has received the merchandise — triggers fund release
+    // Track whether the API call succeeded so we record an accurate transaction status.
+    // If it fails, the order is still marked COMPLETED optimistically; the webhook may
+    // also fire a delivery_received event which the idempotency guard will skip cleanly.
+    let escrowConfirmed = false;
+    if (order.escrow_transaction_id) {
+      const buyer = await User.findByPk(order.buyer_id, { attributes: ['email'] });
+      try {
+        await confirmDeliveryEscrow(order.escrow_transaction_id, buyer.email);
+        escrowConfirmed = true;
+      } catch (e) {
+        console.error('Escrow confirmDelivery failed (non-fatal):', e.response?.data || e.message);
+      }
+    }
 
-    if (io) io.to(`user_${order.supplier_id}`).emit('order_status_update', { orderId: order.id, status: 'DELIVERED' });
+    // Record release transaction — PENDING if Escrow.com didn't confirm yet (webhook will update)
+    await Transaction.create({
+      order_id: order.id,
+      escrow_transaction_id: order.escrow_transaction_id || null,
+      escrow_event: 'receive_merchandise',
+      amount: order.total_amount,
+      type: 'RELEASE',
+      status: escrowConfirmed ? 'SUCCESS' : 'PENDING',
+    });
+
+    await order.update({ status: 'COMPLETED', delivery_confirmed_at: now });
+    await notifyPaymentReleased(order.supplier_id, order.id, order.total_amount);
+    if (io) {
+      io.to(`user_${order.supplier_id}`).emit('order_status_updated', { orderId: order.id, status: 'COMPLETED' });
+      io.to(`user_${order.buyer_id}`).emit('order_status_updated', { orderId: order.id, status: 'COMPLETED' });
+    }
+
+    res.json({ message: 'Delivery confirmed. Payment released to supplier.' });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -115,6 +150,14 @@ const raiseDispute = async (req, res) => {
 
     await order.update({ status: 'DISPUTED' });
     await Dispute.create({ order_id: order.id, raised_by: req.user.id, reason, evidence_url });
+
+    // Notify Escrow.com of rejection — initiates their dispute/return process
+    if (order.escrow_transaction_id) {
+      const buyer = await User.findByPk(order.buyer_id, { attributes: ['email'] });
+      await rejectDelivery(order.escrow_transaction_id, buyer.email, reason).catch((e) => {
+        console.error('Escrow rejectDelivery failed (non-fatal):', e.response?.data || e.message);
+      });
+    }
 
     await createNotification({
       userId: order.supplier_id, title: 'Dispute Raised',

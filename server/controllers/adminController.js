@@ -1,6 +1,7 @@
 const { Op, fn, col, literal } = require('sequelize');
 const { User, Listing, Order, Transaction, Dispute, Bid, Notification } = require('../models');
 const { createNotification } = require('../utils/notifications');
+const { acceptTransaction, acceptReturnAndRefund } = require('../utils/escrowService');
 
 const getUsers = async (req, res) => {
   try {
@@ -72,21 +73,66 @@ const getDisputes = async (req, res) => {
 const resolveDispute = async (req, res) => {
   try {
     const { resolution, action } = req.body; // action: 'release_to_supplier' | 'refund_buyer'
-    const dispute = await Dispute.findByPk(req.params.id, { include: [{ model: Order, as: 'order' }] });
+    const dispute = await Dispute.findByPk(req.params.id, {
+      include: [{ model: Order, as: 'order' }],
+    });
     if (!dispute) return res.status(404).json({ message: 'Dispute not found' });
 
-    await dispute.update({ status: 'RESOLVED', resolution, admin_id: req.user.id });
-
     const order = dispute.order;
+
     if (action === 'release_to_supplier') {
+      // 1. Unfreeze funds on Escrow.com first — only persist RESOLVED if it succeeds
+      if (order.escrow_transaction_id) {
+        const buyer = await User.findByPk(order.buyer_id, { attributes: ['email'] });
+        if (buyer) {
+          try {
+            await acceptTransaction(order.escrow_transaction_id, buyer.email);
+          } catch (e) {
+            console.error(`[Admin] acceptTransaction failed for order ${order.id}:`, e.response?.data || e.message);
+            return res.status(502).json({ message: 'Escrow.com could not release funds. Please retry.' });
+          }
+        }
+      }
+      // 2. Escrow confirmed — now update local state
+      await dispute.update({ status: 'RESOLVED', resolution, admin_id: req.user.id });
       await order.update({ status: 'COMPLETED' });
-      await Transaction.create({ order_id: order.id, amount: order.total_amount, type: 'RELEASE', status: 'SUCCESS' });
+      await Transaction.create({
+        order_id: order.id,
+        escrow_transaction_id: order.escrow_transaction_id || null,
+        escrow_event: 'admin_release',
+        amount: order.total_amount,
+        type: 'RELEASE',
+        status: 'SUCCESS',
+      });
       await createNotification({ userId: order.supplier_id, title: 'Dispute Resolved — Payment Released', message: resolution, type: 'dispute_resolved', referenceId: order.id });
       await createNotification({ userId: order.buyer_id, title: 'Dispute Resolved', message: resolution, type: 'dispute_resolved', referenceId: order.id });
     } else if (action === 'refund_buyer') {
+      // 1. Trigger refund on Escrow.com first — only persist RESOLVED if it succeeds
+      if (order.escrow_transaction_id) {
+        const supplier = await User.findByPk(order.supplier_id, { attributes: ['email'] });
+        if (supplier) {
+          try {
+            await acceptReturnAndRefund(order.escrow_transaction_id, supplier.email);
+          } catch (e) {
+            console.error(`[Admin] acceptReturnAndRefund failed for order ${order.id}:`, e.response?.data || e.message);
+            return res.status(502).json({ message: 'Escrow.com could not process the refund. Please retry.' });
+          }
+        }
+      }
+      // 2. Escrow confirmed — now update local state
+      await dispute.update({ status: 'RESOLVED', resolution, admin_id: req.user.id });
       await order.update({ status: 'REFUNDED' });
-      await Transaction.create({ order_id: order.id, amount: order.total_amount, type: 'REFUND', status: 'SUCCESS' });
+      await Transaction.create({
+        order_id: order.id,
+        escrow_transaction_id: order.escrow_transaction_id || null,
+        escrow_event: 'admin_refund',
+        amount: order.total_amount,
+        type: 'REFUND',
+        status: 'SUCCESS',
+      });
       await createNotification({ userId: order.buyer_id, title: 'Dispute Resolved — Refund Initiated', message: resolution, type: 'dispute_resolved', referenceId: order.id });
+    } else {
+      return res.status(400).json({ message: 'Invalid action. Use release_to_supplier or refund_buyer.' });
     }
 
     res.json({ message: 'Dispute resolved' });
@@ -170,7 +216,7 @@ const getBuyerAnalytics = async (req, res) => {
       where: { buyer_id: buyerId },
       include: [{ model: Listing, as: 'listing', attributes: ['biomass_type'] }],
     });
-    const totalSpend = orders.filter(o => ['COMPLETED', 'DELIVERED'].includes(o.status))
+    const totalSpend = orders.filter(o => o.status === 'COMPLETED')
       .reduce((s, o) => s + parseInt(o.total_amount), 0);
     const byType = {};
     orders.forEach(o => {
