@@ -27,6 +27,10 @@ const Order = sequelize.define('Order', {
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
+  indexes: [
+    // Fast webhook lookup by escrow transaction ID
+    { fields: ['escrow_transaction_id'] },
+  ],
 });
 
 module.exports = Order;

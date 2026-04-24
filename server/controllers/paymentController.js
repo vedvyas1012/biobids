@@ -41,6 +41,15 @@ const initiatePayment = async (req, res) => {
       return res.status(400).json({ message: 'Order is not awaiting payment' });
     }
 
+    // Flag 4: Duplicate guard — return existing escrow transaction if already created
+    if (order.escrow_transaction_id) {
+      return res.json({
+        escrow_transaction_id: order.escrow_transaction_id,
+        payment_url:           order.escrow_payment_url,
+        message:               'Escrow transaction already exists. Use payment_url to fund it.',
+      });
+    }
+
     const buyer    = order.buyer;
     const supplier = order.supplier;
     const listing  = order.bid?.listing;

@@ -13,8 +13,9 @@ async function createEscrowTransaction(order, buyerEmail, sellerEmail, opts = {}
   const moisture    = opts.moisture    || '';
   const calorific   = opts.calorific   || '';
   const location    = opts.location    || '';
-  // Convert paise → USD (1 USD ≈ 83 INR; paise = INR/100)
-  const amountUSD   = opts.amountUSD   || parseFloat((order.total_amount / 100 / 83).toFixed(2));
+  // Convert paise → USD (rate configurable via ESCROW_INR_USD_RATE env var)
+  const inrUsdRate  = parseFloat(process.env.ESCROW_INR_USD_RATE) || 83;
+  const amountUSD   = opts.amountUSD   || parseFloat((order.total_amount / 100 / inrUsdRate).toFixed(2));
 
   const payload = {
     parties: [
@@ -104,12 +105,16 @@ async function confirmDeliveryEscrow(transactionId, buyerEmail) {
 
 /**
  * Buyer rejects delivery — opens a dispute on Escrow.com.
+ * Action must be 'reject_return'; reason goes in reject_return_information.
  * Uses As-Customer header per Escrow.com API spec.
  */
-async function rejectDelivery(transactionId, buyerEmail) {
+async function rejectDelivery(transactionId, buyerEmail, reason = '') {
   const response = await escrowClient.patch(
     `/transaction/${transactionId}`,
-    { action: 'reject' },
+    {
+      action: 'reject_return',
+      reject_return_information: { reason },
+    },
     { headers: { 'As-Customer': buyerEmail } }
   );
   return response.data;

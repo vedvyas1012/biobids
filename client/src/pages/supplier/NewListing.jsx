@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/shared/Navbar';
 import { listingsAPI } from '../../services/api';
 import toast from 'react-hot-toast';
-
-const BIOMASS_TYPES = ['rice_husk','sugarcane_bagasse','wood_chips','cotton_stalks','wheat_straw','corn_cobs','bamboo','mustard_husk','sugarcane_husk','peanut_husk','other'];
+import { BIOMASS_TYPES } from '../../constants/biomass';
 const STATES = ['Andhra Pradesh','Bihar','Chhattisgarh','Gujarat','Haryana','Jharkhand','Karnataka','Madhya Pradesh','Maharashtra','Odisha','Punjab','Rajasthan','Tamil Nadu','Telangana','Uttar Pradesh','West Bengal'];
 
 export default function NewListing() {

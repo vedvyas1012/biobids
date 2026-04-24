@@ -14,6 +14,15 @@ const Transaction = sequelize.define('Transaction', {
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: false,
+  indexes: [
+    // Prevent duplicate webhook events from creating duplicate transaction rows.
+    // NULL values in escrow_event/escrow_transaction_id don't violate uniqueness in MySQL.
+    {
+      unique: true,
+      fields: ['order_id', 'escrow_transaction_id', 'escrow_event'],
+      name: 'uq_transaction_order_escrow_event',
+    },
+  ],
 });
 
 module.exports = Transaction;

@@ -29,13 +29,22 @@ export default function BuyerOrderDetail() {
 
   const handleInitiateEscrow = async () => {
     setInitiating(true);
+    // Open a blank window SYNCHRONOUSLY before any await — this is the only way to avoid
+    // popup blockers, which reject window.open() calls from async contexts.
+    const popup = window.open('', '_blank', 'noopener,noreferrer');
     try {
       const { data } = await paymentsAPI.initiate(order.id);
       toast.success('Escrow transaction created! Opening payment page…');
       // Update local state with payment URL so button renders immediately
       setOrder((prev) => ({ ...prev, escrow_payment_url: data.payment_url }));
-      window.open(data.payment_url, '_blank', 'noopener,noreferrer');
+      if (popup) {
+        popup.location.href = data.payment_url;
+      } else {
+        // Fallback if popup was blocked despite our synchronous open
+        window.open(data.payment_url, '_blank', 'noopener,noreferrer');
+      }
     } catch (err) {
+      if (popup) popup.close();
       toast.error(err.response?.data?.message || 'Failed to initiate payment');
     } finally {
       setInitiating(false);

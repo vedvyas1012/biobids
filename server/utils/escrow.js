@@ -42,7 +42,7 @@ const startEscrowCron = () => {
         await notifyPaymentReleased(order.supplier_id, order.id, order.total_amount);
         if (io) {
           io.to(`user_${order.supplier_id}`).emit('payment_released', { orderId: order.id });
-          io.to(`user_${order.buyer_id}`).emit('order_status_update', { orderId: order.id, status: 'COMPLETED' });
+          io.to(`user_${order.buyer_id}`).emit('order_status_updated', { orderId: order.id, status: 'COMPLETED' });
         }
         console.log(`[Cron] Auto-released payment for order ${order.id}`);
       }
