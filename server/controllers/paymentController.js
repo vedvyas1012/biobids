@@ -1,8 +1,10 @@
-const { Order, Transaction, User } = require('../models');
+const { Order, Transaction, User, Listing, Bid } = require('../models');
 const {
   createEscrowTransaction,
   getEscrowTransaction,
   getPaymentLink,
+  createEscrowCustomer,
+  agreeToTransaction,
 } = require('../utils/escrowService');
 const { notifyPaymentEscrowed, notifyPaymentReleased } = require('../utils/notifications');
 
@@ -11,7 +13,14 @@ const setIo = (socketIo) => { io = socketIo; };
 
 /**
  * POST /api/payments/initiate/:order_id
- * Buyer initiates escrow — creates Escrow.com transaction, stores ID + payment URL on order.
+ * Triggered after supplier accepts a bid.
+ * Flow:
+ *  1. Load order + bid + listing + buyer + supplier
+ *  2. Register both buyer and supplier as Escrow.com customers (handle 403 = already exists)
+ *  3. Create Escrow.com transaction with full biomass details
+ *  4. Supplier auto-agrees (platform acts on seller's behalf)
+ *  5. Save escrow_transaction_id + escrow_payment_url on order
+ *  6. Return payment URL so buyer can click and fund escrow
  */
 const initiatePayment = async (req, res) => {
   try {
@@ -19,6 +28,10 @@ const initiatePayment = async (req, res) => {
       include: [
         { model: User, as: 'buyer' },
         { model: User, as: 'supplier' },
+        {
+          model: Bid, as: 'bid',
+          include: [{ model: Listing, as: 'listing' }],
+        },
       ],
     });
 
@@ -28,37 +41,68 @@ const initiatePayment = async (req, res) => {
       return res.status(400).json({ message: 'Order is not awaiting payment' });
     }
 
-    // Convert paise → USD (1 USD ≈ 83 INR; amount stored in paise = INR/100)
-    const amountINR = order.total_amount / 100;
-    const amountUSD = parseFloat((amountINR / 83).toFixed(2));
+    const buyer    = order.buyer;
+    const supplier = order.supplier;
+    const listing  = order.bid?.listing;
 
-    const escrowTxn = await createEscrowTransaction({
-      buyerEmail: order.buyer.email,
-      sellerEmail: order.supplier.email,
-      description: `BioBids Order #${order.id}`,
-      amountUSD,
+    // 1. Ensure both parties exist as Escrow.com customers (safe to call repeatedly)
+    const [buyerName, supplierName] = [buyer.name.split(' '), supplier.name.split(' ')];
+    await Promise.all([
+      createEscrowCustomer({
+        email:     buyer.email,
+        firstName: buyerName[0],
+        lastName:  buyerName.slice(1).join(' ') || buyerName[0],
+        phone:     buyer.phone,
+      }),
+      createEscrowCustomer({
+        email:     supplier.email,
+        firstName: supplierName[0],
+        lastName:  supplierName.slice(1).join(' ') || supplierName[0],
+        phone:     supplier.phone,
+      }),
+    ]);
+
+    // 2. Create the Escrow.com transaction
+    const escrowTxn = await createEscrowTransaction(
+      order,
+      buyer.email,
+      supplier.email,
+      {
+        biomassType: listing?.biomass_type?.replace(/_/g, ' ') || 'Biomass',
+        quantity:    Number(order.quantity),
+        moisture:    listing?.moisture_content,
+        calorific:   listing?.calorific_value,
+        location:    listing ? `${listing.location_district}, ${listing.location_state}` : '',
+      }
+    );
+
+    const escrowTransactionId = String(escrowTxn.id);
+    const paymentUrl          = getPaymentLink(escrowTransactionId);
+
+    // 3. Supplier auto-agrees to transaction terms on behalf of platform
+    await agreeToTransaction(escrowTransactionId, supplier.email).catch((e) => {
+      console.error('Supplier agreeToTransaction failed (non-fatal):', e.response?.data || e.message);
     });
 
-    const paymentUrl = await getPaymentLink(escrowTxn.id);
-
+    // 4. Persist to order
     await order.update({
-      escrow_transaction_id: String(escrowTxn.id),
-      escrow_payment_url: paymentUrl,
+      escrow_transaction_id: escrowTransactionId,
+      escrow_payment_url:    paymentUrl,
     });
 
     await Transaction.create({
-      order_id: order.id,
-      escrow_transaction_id: String(escrowTxn.id),
-      escrow_event: 'TRANSACTION_CREATED',
-      amount: order.total_amount,
-      type: 'ESCROW',
-      status: 'PENDING',
+      order_id:              order.id,
+      escrow_transaction_id: escrowTransactionId,
+      escrow_event:          'transaction_created',
+      amount:                order.total_amount,
+      type:                  'ESCROW',
+      status:                'PENDING',
     });
 
     res.json({
-      escrow_transaction_id: escrowTxn.id,
-      payment_url: paymentUrl,
-      amount_usd: amountUSD,
+      escrow_transaction_id: escrowTransactionId,
+      payment_url:           paymentUrl,
+      message:               'Escrow transaction created. Buyer should open payment_url to fund escrow.',
     });
   } catch (err) {
     console.error('initiatePayment error:', err.response?.data || err.message);
@@ -75,7 +119,6 @@ const getPaymentStatus = async (req, res) => {
     const order = await Order.findByPk(req.params.order_id);
     if (!order) return res.status(404).json({ message: 'Order not found' });
 
-    // Auth: buyer, supplier, or admin
     if (req.user.role !== 'admin' && order.buyer_id !== req.user.id && order.supplier_id !== req.user.id) {
       return res.status(403).json({ message: 'Unauthorized' });
     }
@@ -94,75 +137,87 @@ const getPaymentStatus = async (req, res) => {
 
 /**
  * POST /api/payments/webhook
- * Escrow.com webhook — updates order status based on escrow events.
+ * Escrow.com webhook receiver.
+ * Payload: { "event": "payment_approved", "event_type": "transaction", "transaction_id": 12345 }
+ *
+ * IMPORTANT: Always verify by fetching the transaction from Escrow.com before updating DB.
+ * Always return HTTP 200 (even unhandled events) to prevent Escrow.com retry storms.
  */
 const handleWebhook = async (req, res) => {
+  // Acknowledge immediately — always 200
+  res.json({ received: true });
+
   try {
-    const event = req.body;
+    const eventName     = req.body.event           || '';
+    const transactionId = String(req.body.transaction_id || '');
 
-    // Escrow.com sends { action: { type: ... }, id: transactionId }
-    const transactionId = String(event.id || event.transaction_id || '');
-    const actionType = event.action?.type || event.type || '';
+    if (!transactionId) {
+      console.log('[Webhook] Missing transaction_id, skipping');
+      return;
+    }
 
-    if (!transactionId) return res.status(400).json({ message: 'Missing transaction id' });
+    // Verify by fetching live state from Escrow.com before trusting the event
+    let escrowTxn;
+    try {
+      escrowTxn = await getEscrowTransaction(transactionId);
+    } catch (e) {
+      console.error('[Webhook] Could not verify transaction from Escrow.com:', e.message);
+      return;
+    }
 
     const order = await Order.findOne({ where: { escrow_transaction_id: transactionId } });
-    if (!order) return res.status(404).json({ message: 'Order not found for transaction' });
+    if (!order) {
+      console.log('[Webhook] No order found for escrow transaction:', transactionId);
+      return;
+    }
 
-    // Idempotency: if order is already at terminal status, acknowledge without re-processing
+    // Idempotency: skip if order is already at a terminal status
     const TERMINAL = ['COMPLETED', 'CANCELLED', 'REFUNDED'];
     if (TERMINAL.includes(order.status)) {
-      return res.json({ received: true, skipped: true, reason: 'Order already in terminal state' });
+      console.log(`[Webhook] Order ${order.id} already terminal (${order.status}), skipping`);
+      return;
     }
 
     let newStatus = null;
-    let txnType = 'ESCROW';
+    let txnType   = 'ESCROW';
 
-    switch (actionType) {
-      case 'buyer_paid':
-      case 'payment_received':
+    switch (eventName) {
+      case 'payment_approved':
         newStatus = 'PAYMENT_ESCROWED';
-        txnType = 'ESCROW';
+        txnType   = 'ESCROW';
         break;
       case 'ship_merchandise':
-        // Supplier shipped — status already set by dispatchOrder; skip duplicate
-        if (order.status === 'IN_TRANSIT') return res.json({ received: true, skipped: true });
+        if (order.status === 'IN_TRANSIT') return; // already set by dispatchOrder
         newStatus = 'IN_TRANSIT';
-        txnType = 'ESCROW';
+        txnType   = 'ESCROW';
         break;
-      case 'receive_merchandise':
-        // Buyer confirmed — status may already be COMPLETED from confirmDelivery; skip
-        if (order.status === 'COMPLETED') return res.json({ received: true, skipped: true });
+      case 'delivery_received':
+        if (order.status === 'COMPLETED') return; // already handled by confirmDelivery
         newStatus = 'COMPLETED';
-        txnType = 'RELEASE';
+        txnType   = 'RELEASE';
         break;
-      case 'completed':
-        if (order.status === 'COMPLETED') return res.json({ received: true, skipped: true });
-        newStatus = 'COMPLETED';
-        txnType = 'RELEASE';
-        break;
-      case 'dispute_opened':
+      case 'delivery_rejected':
         newStatus = 'DISPUTED';
-        txnType = 'ESCROW';
+        txnType   = 'ESCROW';
         break;
-      case 'refund':
       case 'refund_approved':
         newStatus = 'REFUNDED';
-        txnType = 'REFUND';
+        txnType   = 'REFUND';
         break;
       default:
-        console.log('Unhandled Escrow webhook event:', actionType);
+        console.log('[Webhook] Unhandled event:', eventName);
+        return;
     }
 
     if (newStatus) {
       await order.update({ status: newStatus });
       await Transaction.create({
-        order_id: order.id,
+        order_id:              order.id,
         escrow_transaction_id: transactionId,
-        escrow_event: actionType,
-        amount: order.total_amount,
-        type: txnType,
-        status: 'SUCCESS',
+        escrow_event:          eventName,
+        amount:                order.total_amount,
+        type:                  txnType,
+        status:                'SUCCESS',
       });
 
       if (newStatus === 'PAYMENT_ESCROWED') {
@@ -176,12 +231,10 @@ const handleWebhook = async (req, res) => {
       }
 
       if (io) io.to(`order_${order.id}`).emit('order_status_updated', { orderId: order.id, status: newStatus });
+      console.log(`[Webhook] Order ${order.id} → ${newStatus} (event: ${eventName})`);
     }
-
-    res.json({ received: true });
   } catch (err) {
-    console.error('webhook error:', err.message);
-    res.status(500).json({ message: err.message });
+    console.error('[Webhook] Processing error:', err.message);
   }
 };
 
@@ -202,7 +255,7 @@ const getTransactions = async (req, res) => {
     const txns = await Transaction.findAll({
       where,
       include: [{ model: Order, as: 'order' }],
-      order: [['created_at', 'DESC']],
+      order:   [['created_at', 'DESC']],
     });
     res.json(txns);
   } catch (err) {

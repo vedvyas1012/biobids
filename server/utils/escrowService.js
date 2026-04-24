@@ -2,22 +2,36 @@ const escrowClient = require('../config/escrow');
 
 /**
  * Create a new Escrow.com transaction when a buyer initiates payment.
- * amounts must be in USD (not paise).
+ * @param {object} order  - Sequelize Order instance (must include bid → listing for quality specs)
+ * @param {string} buyerEmail
+ * @param {string} sellerEmail
+ * @param {object} opts   - Optional overrides: { biomassType, quantity, moisture, calorific, location, amountUSD }
  */
-async function createEscrowTransaction({ buyerEmail, sellerEmail, description, amountUSD, inspectionDays = 7 }) {
+async function createEscrowTransaction(order, buyerEmail, sellerEmail, opts = {}) {
+  const biomassType = opts.biomassType || 'Biomass';
+  const quantity    = opts.quantity    || Number(order.quantity);
+  const moisture    = opts.moisture    || '';
+  const calorific   = opts.calorific   || '';
+  const location    = opts.location    || '';
+  // Convert paise → USD (1 USD ≈ 83 INR; paise = INR/100)
+  const amountUSD   = opts.amountUSD   || parseFloat((order.total_amount / 100 / 83).toFixed(2));
+
   const payload = {
-    currency: 'usd',
-    description,
     parties: [
-      { role: 'buyer', customer: buyerEmail },
+      { role: 'buyer',  customer: buyerEmail  },
       { role: 'seller', customer: sellerEmail },
     ],
+    currency: 'usd',
+    description: `BioBids Order #${order.id} — ${biomassType} ${quantity}T`,
     items: [
       {
-        title: description,
-        description,
+        title: `${biomassType} Biomass — ${quantity} tonnes`,
+        description: moisture && calorific
+          ? `Quality-verified biomass. Moisture: ${moisture}%, Calorific Value: ${calorific} kcal/kg. Location: ${location}`
+          : `BioBids Order #${order.id}`,
         type: 'general_merchandise',
-        quantity: 1,
+        inspection_period: 604800, // 7 days in seconds
+        quantity,
         schedule: [
           {
             amount: amountUSD,
@@ -28,12 +42,9 @@ async function createEscrowTransaction({ buyerEmail, sellerEmail, description, a
         fees: [
           {
             type: 'escrow',
-            split: { buyer: 0.5, seller: 0.5 },
+            split: 0.5,
           },
         ],
-        inspection_period: inspectionDays * 86400,
-        who_gets_fees: 'buyer',
-        extra_attributes: { with_broker_commission: false },
       },
     ],
   };
@@ -44,6 +55,7 @@ async function createEscrowTransaction({ buyerEmail, sellerEmail, description, a
 
 /**
  * Retrieve transaction details by Escrow.com transaction ID.
+ * Use this to verify webhook events before acting on them.
  */
 async function getEscrowTransaction(transactionId) {
   const response = await escrowClient.get(`/transaction/${transactionId}`);
@@ -51,72 +63,91 @@ async function getEscrowTransaction(transactionId) {
 }
 
 /**
- * Buyer or seller agrees to the transaction terms.
- * role: 'buyer' | 'seller'
+ * Agree to the transaction terms on behalf of a customer.
+ * Both buyer and seller must agree before the transaction proceeds.
+ * Uses As-Customer header per Escrow.com API spec.
  */
 async function agreeToTransaction(transactionId, customerEmail) {
-  const response = await escrowClient.patch(`/transaction/${transactionId}`, {
-    action: { type: 'agree', customer: customerEmail },
-  });
+  const response = await escrowClient.patch(
+    `/transaction/${transactionId}`,
+    { action: 'agree' },
+    { headers: { 'As-Customer': customerEmail } }
+  );
   return response.data;
 }
 
 /**
- * Seller marks items as shipped — triggers Escrow.com to start inspection period.
+ * Supplier marks items as shipped — triggers Escrow.com inspection period.
+ * Uses As-Customer header per Escrow.com API spec.
  */
 async function markShipped(transactionId, sellerEmail) {
-  const response = await escrowClient.patch(`/transaction/${transactionId}`, {
-    action: { type: 'ship_merchandise', customer: sellerEmail },
-  });
+  const response = await escrowClient.patch(
+    `/transaction/${transactionId}`,
+    { action: 'ship' },
+    { headers: { 'As-Customer': sellerEmail } }
+  );
   return response.data;
 }
 
 /**
  * Buyer confirms delivery — releases funds to seller.
+ * Uses As-Customer header per Escrow.com API spec.
  */
 async function confirmDeliveryEscrow(transactionId, buyerEmail) {
-  const response = await escrowClient.patch(`/transaction/${transactionId}`, {
-    action: { type: 'receive_merchandise', customer: buyerEmail },
-  });
+  const response = await escrowClient.patch(
+    `/transaction/${transactionId}`,
+    { action: 'receive' },
+    { headers: { 'As-Customer': buyerEmail } }
+  );
   return response.data;
 }
 
 /**
- * Buyer rejects delivery — initiates dispute / return process.
+ * Buyer rejects delivery — opens a dispute on Escrow.com.
+ * Uses As-Customer header per Escrow.com API spec.
  */
 async function rejectDelivery(transactionId, buyerEmail) {
-  const response = await escrowClient.patch(`/transaction/${transactionId}`, {
-    action: { type: 'reject_merchandise', customer: buyerEmail },
-  });
+  const response = await escrowClient.patch(
+    `/transaction/${transactionId}`,
+    { action: 'reject' },
+    { headers: { 'As-Customer': buyerEmail } }
+  );
   return response.data;
 }
 
 /**
- * Register a customer with Escrow.com (needed before creating transactions).
+ * Register a customer with Escrow.com.
+ * Call this during user registration so the customer exists before any transaction.
+ * Handles HTTP 403 gracefully — means the customer already exists, which is fine.
  */
-async function createEscrowCustomer({ email, firstName, lastName }) {
-  const response = await escrowClient.post('/customer', {
-    email,
-    first_name: firstName,
-    last_name: lastName,
-  });
-  return response.data;
-}
-
-/**
- * Get the pay-in link for a transaction so the buyer can fund escrow.
- * Returns the checkout URL from the transaction's payment_methods.
- */
-async function getPaymentLink(transactionId) {
-  const txn = await getEscrowTransaction(transactionId);
-  // Escrow.com provides a checkout URL in payment_methods
-  if (txn.payment_methods && txn.payment_methods.length > 0 && txn.payment_methods[0].checkout_url) {
-    return txn.payment_methods[0].checkout_url;
+async function createEscrowCustomer({ email, firstName, lastName, phone }) {
+  try {
+    const response = await escrowClient.post('/customer', {
+      email,
+      first_name: firstName,
+      last_name:  lastName,
+      phone_number: phone || undefined,
+    });
+    return response.data;
+  } catch (err) {
+    if (err.response?.status === 403) {
+      // Customer already exists in Escrow.com — that's fine
+      return { existing: true, email };
+    }
+    throw err;
   }
-  // Fallback: derive web URL from API base URL (sandbox vs production)
+}
+
+/**
+ * Get the buyer's payment URL for a transaction.
+ * This is Escrow.com's hosted payment page — no API call needed, just URL construction.
+ * Sandbox:    https://www.escrow-sandbox.com/transactions/<id>/payment
+ * Production: https://www.escrow.com/transactions/<id>/payment
+ */
+function getPaymentLink(transactionId) {
   const isSandbox = (process.env.ESCROW_BASE_URL || '').includes('sandbox');
-  const webBase = isSandbox ? 'https://www.escrow-sandbox.com' : 'https://www.escrow.com';
-  return `${webBase}/transactions/${transactionId}`;
+  const webBase   = isSandbox ? 'https://www.escrow-sandbox.com' : 'https://www.escrow.com';
+  return `${webBase}/transactions/${transactionId}/payment`;
 }
 
 module.exports = {
