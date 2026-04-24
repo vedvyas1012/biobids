@@ -1,7 +1,6 @@
 const { Order, Bid, Listing, User, Dispute, Transaction } = require('../models');
 const { notifyOrderDispatched, notifyPaymentReleased, createNotification } = require('../utils/notifications');
 const { markShipped, confirmDeliveryEscrow, rejectDelivery } = require('../utils/escrowService');
-const path = require('path');
 
 let io;
 const setIo = (socketIo) => { io = socketIo; };
@@ -97,7 +96,7 @@ const confirmDelivery = async (req, res) => {
       return res.status(400).json({ message: 'Order is not in transit' });
     }
 
-    await order.update({ status: 'DELIVERED', delivery_confirmed_at: new Date() });
+    const now = new Date();
 
     // Tell Escrow.com buyer has received the merchandise — triggers fund release
     if (order.escrow_transaction_id) {
@@ -107,7 +106,7 @@ const confirmDelivery = async (req, res) => {
       });
     }
 
-    // Record release transaction and notify supplier
+    // Record release transaction and mark order completed in one step
     await Transaction.create({
       order_id: order.id,
       escrow_transaction_id: order.escrow_transaction_id || null,
@@ -117,7 +116,7 @@ const confirmDelivery = async (req, res) => {
       status: 'SUCCESS',
     });
 
-    await order.update({ status: 'COMPLETED' });
+    await order.update({ status: 'COMPLETED', delivery_confirmed_at: now });
     await notifyPaymentReleased(order.supplier_id, order.id, order.total_amount);
     if (io) {
       io.to(`user_${order.supplier_id}`).emit('order_status_update', { orderId: order.id, status: 'COMPLETED' });

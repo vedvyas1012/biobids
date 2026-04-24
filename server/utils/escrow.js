@@ -1,8 +1,9 @@
 // Escrow auto-release cron job (runs every hour)
 const cron = require('node-cron');
 const { Op } = require('sequelize');
-const { Order, Transaction } = require('../models');
+const { Order, Transaction, User } = require('../models');
 const { notifyPaymentReleased } = require('./notifications');
+const { confirmDeliveryEscrow } = require('./escrowService');
 
 let io;
 const setIo = (socketIo) => { io = socketIo; };
@@ -19,13 +20,30 @@ const startEscrowCron = () => {
       });
 
       for (const order of overdueOrders) {
+        // Notify Escrow.com that buyer implicitly accepted (auto-release)
+        if (order.escrow_transaction_id) {
+          const buyer = await User.findByPk(order.buyer_id, { attributes: ['email'] });
+          if (buyer) {
+            await confirmDeliveryEscrow(order.escrow_transaction_id, buyer.email).catch((e) => {
+              console.error(`[Cron] Escrow confirmDelivery failed for order ${order.id}:`, e.response?.data || e.message);
+            });
+          }
+        }
+
         await order.update({ status: 'COMPLETED' });
         await Transaction.create({
-          order_id: order.id, amount: order.total_amount,
-          type: 'RELEASE', status: 'SUCCESS',
+          order_id: order.id,
+          escrow_transaction_id: order.escrow_transaction_id || null,
+          escrow_event: 'auto_release',
+          amount: order.total_amount,
+          type: 'RELEASE',
+          status: 'SUCCESS',
         });
         await notifyPaymentReleased(order.supplier_id, order.id, order.total_amount);
-        if (io) io.to(`user_${order.supplier_id}`).emit('payment_released', { orderId: order.id });
+        if (io) {
+          io.to(`user_${order.supplier_id}`).emit('payment_released', { orderId: order.id });
+          io.to(`user_${order.buyer_id}`).emit('order_status_update', { orderId: order.id, status: 'COMPLETED' });
+        }
         console.log(`[Cron] Auto-released payment for order ${order.id}`);
       }
     } catch (err) {

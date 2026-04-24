@@ -25,7 +25,7 @@ export default function AdminTransactions() {
           <div className="card overflow-hidden p-0">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
-                <tr>{['Txn #','Order','Razorpay Order ID','Amount','Type','Status','Date'].map(h => <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase">{h}</th>)}</tr>
+                <tr>{['Txn #','Order','Escrow Txn ID','Amount','Type','Status','Date'].map(h => <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase">{h}</th>)}</tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {txns.length === 0 ? <tr><td colSpan={7} className="text-center py-12 text-gray-500">No transactions</td></tr>
@@ -33,7 +33,7 @@ export default function AdminTransactions() {
                   <tr key={t.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">#{t.id}</td>
                     <td className="px-4 py-3">#{t.order_id}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500">{t.razorpay_order_id || '—'}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-500">{t.escrow_transaction_id || '—'}</td>
                     <td className="px-4 py-3 font-semibold text-primary">₹{(t.amount / 100).toLocaleString('en-IN')}</td>
                     <td className="px-4 py-3"><span className="badge badge-blue">{t.type}</span></td>
                     <td className="px-4 py-3"><span className={`text-xs font-semibold ${t.status === 'SUCCESS' ? 'text-green-600' : 'text-red-500'}`}>{t.status}</span></td>

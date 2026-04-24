@@ -109,11 +109,14 @@ async function createEscrowCustomer({ email, firstName, lastName }) {
  */
 async function getPaymentLink(transactionId) {
   const txn = await getEscrowTransaction(transactionId);
-  // Escrow.com provides a payment link at the transaction level
-  const link = txn.payment_methods && txn.payment_methods.length > 0
-    ? txn.payment_methods[0].checkout_url
-    : `https://www.escrow-sandbox.com/transactions/${transactionId}`;
-  return link;
+  // Escrow.com provides a checkout URL in payment_methods
+  if (txn.payment_methods && txn.payment_methods.length > 0 && txn.payment_methods[0].checkout_url) {
+    return txn.payment_methods[0].checkout_url;
+  }
+  // Fallback: derive web URL from API base URL (sandbox vs production)
+  const isSandbox = (process.env.ESCROW_BASE_URL || '').includes('sandbox');
+  const webBase = isSandbox ? 'https://www.escrow-sandbox.com' : 'https://www.escrow.com';
+  return `${webBase}/transactions/${transactionId}`;
 }
 
 module.exports = {

@@ -109,27 +109,48 @@ const handleWebhook = async (req, res) => {
     const order = await Order.findOne({ where: { escrow_transaction_id: transactionId } });
     if (!order) return res.status(404).json({ message: 'Order not found for transaction' });
 
+    // Idempotency: if order is already at terminal status, acknowledge without re-processing
+    const TERMINAL = ['COMPLETED', 'CANCELLED', 'REFUNDED'];
+    if (TERMINAL.includes(order.status)) {
+      return res.json({ received: true, skipped: true, reason: 'Order already in terminal state' });
+    }
+
     let newStatus = null;
+    let txnType = 'ESCROW';
 
     switch (actionType) {
       case 'buyer_paid':
       case 'payment_received':
         newStatus = 'PAYMENT_ESCROWED';
+        txnType = 'ESCROW';
         break;
       case 'ship_merchandise':
+        // Supplier shipped — status already set by dispatchOrder; skip duplicate
+        if (order.status === 'IN_TRANSIT') return res.json({ received: true, skipped: true });
         newStatus = 'IN_TRANSIT';
+        txnType = 'ESCROW';
         break;
       case 'receive_merchandise':
-        newStatus = 'DELIVERED';
+        // Buyer confirmed — status may already be COMPLETED from confirmDelivery; skip
+        if (order.status === 'COMPLETED') return res.json({ received: true, skipped: true });
+        newStatus = 'COMPLETED';
+        txnType = 'RELEASE';
         break;
       case 'completed':
+        if (order.status === 'COMPLETED') return res.json({ received: true, skipped: true });
         newStatus = 'COMPLETED';
+        txnType = 'RELEASE';
         break;
       case 'dispute_opened':
         newStatus = 'DISPUTED';
+        txnType = 'ESCROW';
+        break;
+      case 'refund':
+      case 'refund_approved':
+        newStatus = 'REFUNDED';
+        txnType = 'REFUND';
         break;
       default:
-        // Unknown event — log but acknowledge
         console.log('Unhandled Escrow webhook event:', actionType);
     }
 
@@ -140,7 +161,7 @@ const handleWebhook = async (req, res) => {
         escrow_transaction_id: transactionId,
         escrow_event: actionType,
         amount: order.total_amount,
-        type: newStatus === 'COMPLETED' ? 'RELEASE' : 'ESCROW',
+        type: txnType,
         status: 'SUCCESS',
       });
 
