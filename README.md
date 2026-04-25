@@ -77,6 +77,8 @@ Edit `.env` and fill in:
 - `ESCROW_API_KEY` — from Escrow.com Account Settings → API Keys
 - `ESCROW_BASE_URL` — `https://api.escrow-sandbox.com/2017-09-01` (sandbox) or `https://api.escrow.com/2017-09-01` (production)
 - `ESCROW_WEBHOOK_URL` — your public server URL + `/api/payments/webhook`
+- `ESCROW_WEB_BASE_URL` — (optional) explicit buyer-facing URL for payment links; auto-derived from `ESCROW_BASE_URL` if unset
+- `ESCROW_INR_USD_RATE` — INR to USD rate used for Escrow.com amounts (update monthly or when rate moves >2%)
 - `EMAIL_USER` / `EMAIL_PASS` — Gmail + app password (optional)
 
 ### 2. Create MySQL Database
@@ -125,10 +127,10 @@ BioBids uses the [Escrow.com API](https://www.escrow.com/api/docs) to hold buyer
    BioBids creates an Escrow.com transaction and returns a payment URL
 3. **Buyer funds escrow** → Buyer opens Escrow.com payment page and pays  
    Escrow.com sends a webhook → Order becomes `PAYMENT_ESCROWED`
-4. **Supplier dispatches** → Calls Escrow.com `ship_merchandise` action → `IN_TRANSIT`
-5. **Buyer confirms delivery** → Calls Escrow.com `receive_merchandise` → funds released → `COMPLETED`
-6. **Buyer raises dispute** → Calls Escrow.com `reject_merchandise` → `DISPUTED`  
-   Escrow.com handles dispute resolution; admin can also intervene
+4. **Supplier dispatches** → Calls Escrow.com `ship` action → `IN_TRANSIT`
+5. **Buyer confirms delivery** → Calls Escrow.com `receive` action → `COMPLETED` (funds released on `transaction.accept` webhook)
+6. **Buyer raises dispute** → Calls Escrow.com `reject` action → `DISPUTED`  
+   Admin resolves via `POST /api/admin/disputes/:id/resolve` — calls `accept` (release to supplier) or `accept_return` (refund to buyer) on Escrow.com
 7. **Auto-release**: if buyer doesn't respond within 7 days of dispatch, payment auto-releases via cron job
 
 Amounts stored in **paise** (integers) in DB; converted to **USD** when calling Escrow.com API (at ₹83/USD).
@@ -242,7 +244,7 @@ POST   /api/admin/disputes/:id/resolve
 | `bid_updated`         | Server → Room   | `{ listingId, bid }`                   |
 | `bid_accepted`        | Server → Room   | `{ listingId, bidId, orderId }`        |
 | `payment_escrowed`    | Server → User   | `{ orderId }`                          |
-| `order_status_updated`| Server → Room   | `{ orderId, status }`                  |
+| `order_status_updated`| Server → User   | `{ orderId, status }`                  |
 | `payment_released`    | Server → User   | `{ orderId }`                          |
 
 ---
