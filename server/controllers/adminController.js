@@ -251,18 +251,22 @@ const toggleUserStatus = async (req, res) => {
     // Invalidate all sessions when suspending — forces re-login (which will then be blocked)
     if (!willBeActive) updates.refresh_token = null;
 
+    // Critical operation — the toggle itself. A failure here should surface as 500.
     await user.update(updates);
 
     // Audit log
     console.info(`[Admin] User #${targetId} ${willBeActive ? 'activated' : 'suspended'} by admin #${req.user.id}`);
 
-    // Notify the affected user
+    // Notification is best-effort — its failure must not mask the successful toggle,
+    // and must not roll it back. Catch independently and log any error.
     const notifTitle = willBeActive ? 'Account Reinstated' : 'Account Suspended';
     const notifMsg = willBeActive
       ? 'Your account has been reinstated. You can now log in again.'
       : 'Your account has been suspended. Contact support for assistance.';
-    await createNotification({ userId: targetId, title: notifTitle, message: notifMsg, type: 'account_status', referenceId: null });
+    createNotification({ userId: targetId, title: notifTitle, message: notifMsg, type: 'account_status', referenceId: null })
+      .catch((e) => console.error(`[Admin] Failed to send account_status notification to user #${targetId}:`, e.message));
 
+    // Respond immediately — don't await the notification
     res.json({ message: `User ${willBeActive ? 'activated' : 'deactivated'}`, is_active: willBeActive });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
