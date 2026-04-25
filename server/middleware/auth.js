@@ -13,7 +13,7 @@ const authenticate = async (req, res, next) => {
       attributes: { exclude: ['password', 'refresh_token'] },
     });
     if (!user) return res.status(401).json({ message: 'User not found' });
-    if (user.is_active === false) {
+    if (!user.is_active) {
       return res.status(403).json({ message: 'Account has been suspended. Contact support.' });
     }
     req.user = user;

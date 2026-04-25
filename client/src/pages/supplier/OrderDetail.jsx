@@ -27,7 +27,9 @@ export default function SupplierOrderDetail() {
       if (proof) fd.append('proof', proof);
       await ordersAPI.dispatch(id, fd);
       toast.success('Order marked as dispatched!');
-      ordersAPI.getById(id).then(({ data }) => setOrder(data));
+      ordersAPI.getById(id)
+        .then(({ data }) => setOrder(data))
+        .catch(() => toast.error('Order dispatched but failed to refresh — please reload the page'));
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed');
     } finally { setDispatching(false); }

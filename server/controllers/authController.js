@@ -50,7 +50,7 @@ const login = async (req, res) => {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ message: 'Invalid credentials' });
 
-    if (user.is_active === false) {
+    if (!user.is_active) {
       return res.status(403).json({ message: 'Account has been suspended. Contact support.' });
     }
 
@@ -76,7 +76,7 @@ const refreshToken = async (req, res) => {
     if (!user || user.refresh_token !== token) {
       return res.status(401).json({ message: 'Invalid refresh token' });
     }
-    if (user.is_active === false) {
+    if (!user.is_active) {
       return res.status(403).json({ message: 'Account has been suspended. Contact support.' });
     }
 

@@ -19,7 +19,7 @@ export default function Landing() {
   useEffect(() => {
     publicAPI.getStats()
       .then(setStats)
-      .catch(() => {})
+      .catch((err) => console.error('[Landing] stats fetch failed:', err.message))
       .finally(() => setStatsLoading(false));
   }, []);
 

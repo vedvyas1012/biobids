@@ -18,6 +18,9 @@ export default function AdminUsers() {
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
 
+  // Abort any in-flight activity request when the component unmounts
+  useEffect(() => () => { activityAbortRef.current?.abort(); }, []);
+
   const handleToggleStatus = async (user) => {
     const action = user.is_active !== false ? 'block' : 'unblock';
     if (!window.confirm(`Are you sure you want to ${action} ${user.name}?`)) return;

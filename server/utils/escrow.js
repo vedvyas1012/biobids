@@ -63,7 +63,7 @@ const startEscrowCron = () => {
               amount: order.total_amount,
               type: 'RELEASE',
               status: 'PENDING',
-            }).catch(() => {}); // ignore duplicate constraint errors on repeated failures
+            }).catch((e) => console.warn(`[Cron] Could not record pending txn for order ${order.id} (may be duplicate):`, e.message));
             console.warn(`[Cron] Order ${order.id} kept IN_TRANSIT — Escrow confirmation pending`);
           }
         } catch (orderErr) {

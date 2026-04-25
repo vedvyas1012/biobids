@@ -150,7 +150,7 @@ const getAnalytics = async (req, res) => {
       Transaction.findAll({ where: { status: 'SUCCESS', type: 'ESCROW' } }).catch(() => []),
     ]);
 
-    const gmv = transactions.reduce((sum, t) => sum + parseInt(t.amount), 0);
+    const gmv = transactions.reduce((sum, t) => sum + (parseInt(t.amount, 10) || 0), 0);
 
     // Moved into same Promise.all for consistent resilience — each arm catches independently
     const [completedOrders, activeListings] = await Promise.all([
@@ -199,7 +199,7 @@ const getSupplierAnalytics = async (req, res) => {
   try {
     const supplierId = req.user.id;
     const orders = await Order.findAll({ where: { supplier_id: supplierId } });
-    const earnings = orders.filter(o => o.status === 'COMPLETED').reduce((s, o) => s + parseInt(o.total_amount), 0);
+    const earnings = orders.filter(o => o.status === 'COMPLETED').reduce((s, o) => s + (parseInt(o.total_amount, 10) || 0), 0);
     const listingCount = await Listing.count({ where: { supplier_id: supplierId } });
     const avgBid = await Bid.findOne({
       attributes: [[fn('AVG', col('price_per_tonne')), 'avg']],
@@ -220,7 +220,7 @@ const getBuyerAnalytics = async (req, res) => {
       include: [{ model: Listing, as: 'listing', attributes: ['biomass_type'] }],
     });
     const totalSpend = orders.filter(o => o.status === 'COMPLETED')
-      .reduce((s, o) => s + parseInt(o.total_amount), 0);
+      .reduce((s, o) => s + (parseInt(o.total_amount, 10) || 0), 0);
     const byType = {};
     orders.forEach(o => {
       const t = o.listing?.biomass_type || 'other';

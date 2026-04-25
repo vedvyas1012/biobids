@@ -15,7 +15,7 @@ export default function AdminDashboard() {
     adminAPI.getAnalytics().then(({ data }) => setData(data)).finally(() => setLoading(false));
     adminAPI.getDisputes()
       .then(({ data }) => setOpenDisputes(data.filter((d) => d.status === 'OPEN').length))
-      .catch(() => {});
+      .catch((err) => console.error('[Dashboard] disputes fetch failed:', err.message));
   }, []);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" /></div>;

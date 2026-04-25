@@ -10,7 +10,12 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const stored = localStorage.getItem('user');
     if (stored) {
-      setUser(JSON.parse(stored));
+      try {
+        setUser(JSON.parse(stored));
+      } catch {
+        // Stored value was corrupted — clear it so the app doesn't crash on every reload
+        localStorage.removeItem('user');
+      }
     }
     setLoading(false);
   }, []);
