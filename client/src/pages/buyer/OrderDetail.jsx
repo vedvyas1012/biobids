@@ -68,8 +68,7 @@ export default function BuyerOrderDetail() {
     }
   };
 
-  const handleDispute = async (e) => {
-    e.preventDefault();
+  const handleDispute = async () => {
     setDisputing(true);
     try {
       const fd = new FormData();

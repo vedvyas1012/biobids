@@ -8,11 +8,12 @@ router.get('/stats', async (req, res) => {
       User.count({ where: { role: 'supplier' } }),
       User.count({ where: { role: 'buyer' } }),
       Order.findAll({ where: { status: 'COMPLETED' }, attributes: ['quantity'] }),
-      Listing.count({ col: 'location_state', distinct: true }),
+      Listing.count({ distinct: true, col: 'location_state' }),
     ]);
     const tonnesTraded = completedOrders.reduce((s, o) => s + parseFloat(o.quantity), 0);
     res.json({ suppliers, buyers, tonnesTraded: Math.round(tonnesTraded), states });
-  } catch {
+  } catch (err) {
+    console.error('[Public] /stats error:', err.message);
     res.json({ suppliers: 0, buyers: 0, tonnesTraded: 0, states: 0 });
   }
 });

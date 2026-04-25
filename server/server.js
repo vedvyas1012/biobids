@@ -38,9 +38,10 @@ app.use('/api/admin', require('./routes/admin'));
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
 
 // Serve React frontend in production
+// The /api/* exclusion prevents unknown API routes from returning HTML instead of 404 JSON
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/dist')));
-  app.get('*', (req, res) => {
+  app.get(/^(?!\/api)/, (req, res) => {
     res.sendFile(path.join(__dirname, '../client/dist/index.html'));
   });
 }

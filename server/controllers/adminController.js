@@ -240,14 +240,16 @@ const toggleUserStatus = async (req, res) => {
 
 const getUserActivity = async (req, res) => {
   try {
-    const user = await User.findByPk(req.params.id, {
+    const userId = parseInt(req.params.id, 10);
+    if (!userId) return res.status(400).json({ message: 'Invalid user id' });
+    const user = await User.findByPk(userId, {
       attributes: { exclude: ['password', 'refresh_token'] },
     });
     if (!user) return res.status(404).json({ message: 'User not found' });
     const [listings, bids, orders] = await Promise.all([
-      Listing.count({ where: { supplier_id: req.params.id } }),
-      Bid.count({ where: { buyer_id: req.params.id } }),
-      Order.count({ where: { [Op.or]: [{ supplier_id: req.params.id }, { buyer_id: req.params.id }] } }),
+      Listing.count({ where: { supplier_id: userId } }),
+      Bid.count({ where: { buyer_id: userId } }),
+      Order.count({ where: { [Op.or]: [{ supplier_id: userId }, { buyer_id: userId }] } }),
     ]);
     res.json({ user, listings, bids, orders });
   } catch (err) { res.status(500).json({ message: err.message }); }

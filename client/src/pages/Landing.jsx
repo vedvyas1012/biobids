@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../components/shared/Navbar';
+import { publicAPI } from '../services/api';
 
 const steps = [
   { icon: '📋', title: 'Supplier Lists Biomass', desc: 'Upload quantity, quality specs (moisture, calorific value), location, and minimum price.' },
@@ -15,7 +16,7 @@ export default function Landing() {
   const [stats, setStats] = useState({ suppliers: 0, buyers: 0, tonnesTraded: 0, states: 0 });
 
   useEffect(() => {
-    fetch('/api/public/stats').then((r) => r.json()).then(setStats).catch(() => {});
+    publicAPI.getStats().then(setStats).catch(() => {});
   }, []);
 
   const statCards = [

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { notificationsAPI } from '../../services/api';
@@ -39,15 +39,15 @@ export default function Navbar() {
     if (user) fetchNotifications();
     const interval = setInterval(() => { if (user) fetchNotifications(); }, 30000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, fetchNotifications]);
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     try {
       const { data } = await notificationsAPI.getAll();
       setNotifs(data.notifications);
       setUnread(data.unreadCount);
     } catch {}
-  };
+  }, []);
 
   const handleLogout = async () => {
     await logout();

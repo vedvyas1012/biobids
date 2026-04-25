@@ -91,7 +91,7 @@ export const adminAPI = {
 };
 
 export const publicAPI = {
-  getStats: () => fetch('/api/public/stats').then((r) => r.json()),
+  getStats: () => api.get('/public/stats').then((r) => r.data),
 };
 
 export default api;

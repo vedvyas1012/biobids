@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Navbar from '../../components/shared/Navbar';
 import { adminAPI } from '../../services/api';
 
@@ -9,10 +9,12 @@ export default function AdminUsers() {
   const [activityData, setActivityData] = useState(null);
   const [activityLoading, setActivityLoading] = useState(false);
 
-  const loadUsers = () =>
+  const loadUsers = useCallback(() => {
+    setLoading(true);
     adminAPI.getUsers().then(({ data }) => setUsers(data)).finally(() => setLoading(false));
+  }, []);
 
-  useEffect(() => { loadUsers(); }, []);
+  useEffect(() => { loadUsers(); }, [loadUsers]);
 
   const handleToggleStatus = async (userId) => {
     await adminAPI.toggleUserStatus(userId);
