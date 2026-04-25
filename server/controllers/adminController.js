@@ -254,7 +254,7 @@ const toggleUserStatus = async (req, res) => {
     await user.update(updates);
 
     // Audit log
-    console.info(`[Admin] User #${targetId} (${user.email}) ${willBeActive ? 'activated' : 'suspended'} by admin #${req.user.id}`);
+    console.info(`[Admin] User #${targetId} ${willBeActive ? 'activated' : 'suspended'} by admin #${req.user.id}`);
 
     // Notify the affected user
     const notifTitle = willBeActive ? 'Account Reinstated' : 'Account Suspended';

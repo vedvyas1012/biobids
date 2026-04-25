@@ -48,11 +48,28 @@ chmod 600 .env       # Restrict permissions — only the app user should read th
 Key `.env` values for production:
 ```dotenv
 NODE_ENV=production
+PORT=5001
+
+# Database
+DB_HOST=127.0.0.1
+DB_NAME=biomass_platform
 DB_USER=biobids
 DB_PASSWORD=your_strong_password
+
+# Auth secrets — generate with: node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+JWT_SECRET=your_jwt_secret
+JWT_REFRESH_SECRET=your_jwt_refresh_secret
+
+# Frontend origin
 CLIENT_URL=https://biobid.in
+
+# Escrow.com
+ESCROW_EMAIL=your_escrow_account_email
+ESCROW_API_KEY=your_escrow_api_key
 ESCROW_BASE_URL=https://api.escrow.com/2017-09-01
+ESCROW_WEB_BASE_URL=https://www.escrow.com
 ESCROW_WEBHOOK_URL=https://biobid.in/api/payments/webhook
+ESCROW_INR_USD_RATE=83
 ```
 
 ---
