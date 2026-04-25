@@ -76,6 +76,9 @@ const refreshToken = async (req, res) => {
     if (!user || user.refresh_token !== token) {
       return res.status(401).json({ message: 'Invalid refresh token' });
     }
+    if (user.is_active === false) {
+      return res.status(403).json({ message: 'Account has been suspended. Contact support.' });
+    }
 
     const tokens = generateTokens(user);
     await user.update({ refresh_token: tokens.refreshToken });

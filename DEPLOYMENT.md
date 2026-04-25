@@ -3,7 +3,7 @@
 ## Prerequisites
 - Hostinger VPS — Ubuntu 22.04
 - Domain `biobid.in` pointing to VPS IP (set A record in Hostinger DNS)
-- Node.js 18+, MySQL 8.0+, Nginx, PM2, Certbot
+- Node.js 22+, MySQL 8.0+, Nginx, PM2, Certbot
 
 ---
 
@@ -11,7 +11,7 @@
 
 ```bash
 sudo apt update && sudo apt upgrade -y
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs mysql-server nginx certbot python3-certbot-nginx
 npm install -g pm2
 ```
@@ -41,11 +41,12 @@ EXIT;
 git clone https://github.com/vedvyas1012/biobids /var/www/biobids
 cd /var/www/biobids
 cp .env.example .env
-nano .env   # Fill in all values
+nano .env            # Fill in all values
+chmod 600 .env       # Restrict permissions — only the app user should read this file
 ```
 
 Key `.env` values for production:
-```
+```dotenv
 NODE_ENV=production
 DB_USER=biobids
 DB_PASSWORD=your_strong_password

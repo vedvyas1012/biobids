@@ -62,7 +62,9 @@ sequelize
   .authenticate()
   .then(() => {
     console.log('MySQL connected');
-    return sequelize.sync({ alter: true }); // use migrations in production
+    // alter:true is convenient for dev but dangerous in production — it can DROP columns.
+    // In production, run migrations manually (see DEPLOYMENT.md).
+    return sequelize.sync(process.env.NODE_ENV !== 'production' ? { alter: true } : {});
   })
   .then(() => {
     server.listen(PORT, () => console.log(`BioBids server running on port ${PORT}`));

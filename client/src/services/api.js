@@ -79,7 +79,7 @@ export const notificationsAPI = {
 export const adminAPI = {
   getUsers: () => api.get('/admin/users'),
   toggleUserStatus: (id) => api.patch(`/admin/users/${id}/toggle-status`),
-  getUserActivity: (id) => api.get(`/admin/users/${id}/activity`),
+  getUserActivity: (id, config = {}) => api.get(`/admin/users/${id}/activity`, config),
   getListings: () => api.get('/admin/listings'),
   getOrders: () => api.get('/admin/orders'),
   getTransactions: () => api.get('/admin/transactions'),

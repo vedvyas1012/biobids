@@ -13,6 +13,9 @@ const authenticate = async (req, res, next) => {
       attributes: { exclude: ['password', 'refresh_token'] },
     });
     if (!user) return res.status(401).json({ message: 'User not found' });
+    if (user.is_active === false) {
+      return res.status(403).json({ message: 'Account has been suspended. Contact support.' });
+    }
     req.user = user;
     next();
   } catch (err) {
@@ -36,7 +39,13 @@ const optionalAuth = async (req, res, next) => {
     req.user = await User.findByPk(decoded.id, {
       attributes: { exclude: ['password', 'refresh_token'] },
     });
-  } catch {}
+  } catch (err) {
+    // Silence expected JWT errors (missing/expired token is normal for unauthenticated visitors).
+    // Log unexpected DB-level failures for observability.
+    if (!(err instanceof jwt.JsonWebTokenError) && !(err instanceof jwt.TokenExpiredError)) {
+      console.error('[optionalAuth] unexpected error:', err.message);
+    }
+  }
   next();
 };
 

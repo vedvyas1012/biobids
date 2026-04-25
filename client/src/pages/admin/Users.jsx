@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Navbar from '../../components/shared/Navbar';
 import { adminAPI } from '../../services/api';
+import toast from 'react-hot-toast';
 
 export default function AdminUsers() {
   const [users, setUsers] = useState([]);
@@ -8,6 +9,7 @@ export default function AdminUsers() {
   const [filter, setFilter] = useState('');
   const [activityData, setActivityData] = useState(null);
   const [activityLoading, setActivityLoading] = useState(false);
+  const activityAbortRef = useRef(null);
 
   const loadUsers = useCallback(() => {
     setLoading(true);
@@ -16,20 +18,30 @@ export default function AdminUsers() {
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
 
-  const handleToggleStatus = async (userId) => {
-    await adminAPI.toggleUserStatus(userId);
-    loadUsers();
+  const handleToggleStatus = async (user) => {
+    const action = user.is_active !== false ? 'block' : 'unblock';
+    if (!window.confirm(`Are you sure you want to ${action} ${user.name}?`)) return;
+    try {
+      await adminAPI.toggleUserStatus(user.id);
+      loadUsers();
+    } catch (err) {
+      toast.error(err.response?.data?.message || `Failed to ${action} user`);
+    }
   };
 
-  const handleViewActivity = async (userId) => {
+  const handleViewActivity = (userId) => {
+    // Cancel any in-flight request for a previous user
+    if (activityAbortRef.current) activityAbortRef.current.abort();
+    const controller = new AbortController();
+    activityAbortRef.current = controller;
+
     setActivityLoading(true);
     setActivityData(null);
-    try {
-      const { data } = await adminAPI.getUserActivity(userId);
-      setActivityData(data);
-    } finally {
-      setActivityLoading(false);
-    }
+
+    adminAPI.getUserActivity(userId, { signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) setActivityData(data); })
+      .catch((err) => { if (err.name !== 'CanceledError' && err.name !== 'AbortError') console.error(err); })
+      .finally(() => { if (!controller.signal.aborted) setActivityLoading(false); });
   };
 
   const filtered = users.filter((u) => !filter || u.role === filter);
@@ -78,7 +90,7 @@ export default function AdminUsers() {
                       {u.role !== 'admin' && (
                         <div className="flex gap-2">
                           <button
-                            onClick={() => handleToggleStatus(u.id)}
+                            onClick={() => handleToggleStatus(u)}
                             className={`text-xs px-2 py-1 rounded border ${u.is_active !== false ? 'border-red-300 text-red-600 hover:bg-red-50' : 'border-green-300 text-green-700 hover:bg-green-50'}`}
                           >
                             {u.is_active !== false ? 'Block' : 'Unblock'}

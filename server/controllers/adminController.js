@@ -152,11 +152,15 @@ const getAnalytics = async (req, res) => {
 
     const gmv = transactions.reduce((sum, t) => sum + parseInt(t.amount), 0);
 
-    const completedOrders = await Order.count({ where: { status: 'COMPLETED' } });
-    const activeListings = await Listing.count({ where: { status: 'ACTIVE' } });
+    // Moved into same Promise.all for consistent resilience — each arm catches independently
+    const [completedOrders, activeListings] = await Promise.all([
+      Order.count({ where: { status: 'COMPLETED' } }).catch(() => 0),
+      Listing.count({ where: { status: 'ACTIVE' } }).catch(() => 0),
+    ]);
 
-    // Orders by state — use Listing table directly (avoids brittle cross-table JOIN)
-    const ordersByState = await Listing.findAll({
+    // Listings by state — use Listing table directly (avoids brittle cross-table JOIN).
+    // Renamed from ordersByState to listingsByState to accurately reflect the data source.
+    const listingsByState = await Listing.findAll({
       attributes: ['location_state', [fn('COUNT', col('id')), 'count']],
       group: ['location_state'],
       raw: true,
@@ -182,7 +186,7 @@ const getAnalytics = async (req, res) => {
 
     res.json({
       summary: { totalUsers, totalListings, totalOrders, completedOrders, activeListings, gmv },
-      ordersByState,
+      listingsByState,
       byBiomassType,
       monthlyGmv: monthlyTxns,
     });
@@ -230,11 +234,36 @@ const getBuyerAnalytics = async (req, res) => {
 
 const toggleUserStatus = async (req, res) => {
   try {
-    const user = await User.findByPk(req.params.id);
+    const targetId = parseInt(req.params.id, 10);
+    if (!targetId) return res.status(400).json({ message: 'Invalid user id' });
+
+    // Prevent admin from suspending their own account
+    if (targetId === req.user.id) {
+      return res.status(403).json({ message: 'You cannot suspend your own account' });
+    }
+
+    const user = await User.findByPk(targetId);
     if (!user) return res.status(404).json({ message: 'User not found' });
     if (user.role === 'admin') return res.status(403).json({ message: 'Cannot modify admin accounts' });
-    await user.update({ is_active: !user.is_active });
-    res.json({ message: `User ${user.is_active ? 'activated' : 'deactivated'}`, is_active: user.is_active });
+
+    const willBeActive = !user.is_active;
+    const updates = { is_active: willBeActive };
+    // Invalidate all sessions when suspending — forces re-login (which will then be blocked)
+    if (!willBeActive) updates.refresh_token = null;
+
+    await user.update(updates);
+
+    // Audit log
+    console.info(`[Admin] User #${targetId} (${user.email}) ${willBeActive ? 'activated' : 'suspended'} by admin #${req.user.id}`);
+
+    // Notify the affected user
+    const notifTitle = willBeActive ? 'Account Reinstated' : 'Account Suspended';
+    const notifMsg = willBeActive
+      ? 'Your account has been reinstated. You can now log in again.'
+      : 'Your account has been suspended. Contact support for assistance.';
+    await createNotification({ userId: targetId, title: notifTitle, message: notifMsg, type: 'account_status', referenceId: null });
+
+    res.json({ message: `User ${willBeActive ? 'activated' : 'deactivated'}`, is_active: willBeActive });
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 

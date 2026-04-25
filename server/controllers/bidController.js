@@ -74,8 +74,9 @@ const getBids = async (req, res) => {
     if (!listing) return res.status(404).json({ message: 'Listing not found' });
 
     const where = { listing_id: listingId };
-    // Buyers only see their own bids
-    if (req.user.role === 'buyer') where.buyer_id = req.user.id;
+    // Buyers only see their own bids; unauthenticated visitors see nothing (empty array)
+    if (req.user?.role === 'buyer') where.buyer_id = req.user.id;
+    else if (!req.user) return res.json([]);
 
     const bids = await Bid.findAll({
       where,
@@ -86,7 +87,7 @@ const getBids = async (req, res) => {
     // Anonymize buyer names for non-supplier/non-admin viewing others' bids
     const result = bids.map((b, idx) => {
       const plain = b.toJSON();
-      if (req.user.role === 'buyer' && plain.buyer_id !== req.user.id) {
+      if (req.user?.role === 'buyer' && plain.buyer_id !== req.user.id) {
         plain.buyer = { id: null, name: `Buyer ${idx + 1}` };
       }
       return plain;

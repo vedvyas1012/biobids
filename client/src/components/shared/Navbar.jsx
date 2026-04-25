@@ -9,6 +9,8 @@ const getNotificationPath = (n, userRole) => {
   switch (n.type) {
     case 'bid_received':
       return `/listings/${n.reference_id}`;
+    case 'bid_rejected':
+      return `/listings/${n.reference_id}`;
     case 'bid_accepted':
     case 'payment_escrowed':
     case 'order_dispatched':

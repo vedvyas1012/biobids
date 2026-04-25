@@ -95,6 +95,13 @@ SET @drop_t_sig = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_S
 SET @sql = IF(@drop_t_sig=1, 'ALTER TABLE transactions DROP COLUMN razorpay_signature', 'SELECT 1');
 PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- 4. users — add is_active for account suspension (guarded via information_schema)
+-- ─────────────────────────────────────────────────────────────────────────────
+SET @add_is_active = (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users' AND COLUMN_NAME='is_active');
+SET @sql = IF(@add_is_active=0, 'ALTER TABLE users ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT \'0 = suspended\'', 'SELECT 1');
+PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
+
 -- Unique constraint to prevent duplicate webhook rows
 -- (NULL values in nullable columns do NOT violate uniqueness in MySQL)
 -- Guarded: only adds the constraint if it doesn't already exist.

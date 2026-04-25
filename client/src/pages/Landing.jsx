@@ -14,16 +14,21 @@ const biomassTypes = ['Rice Husk', 'Sugarcane Bagasse', 'Wood Chips', 'Cotton St
 
 export default function Landing() {
   const [stats, setStats] = useState({ suppliers: 0, buyers: 0, tonnesTraded: 0, states: 0 });
+  const [statsLoading, setStatsLoading] = useState(true);
 
   useEffect(() => {
-    publicAPI.getStats().then(setStats).catch(() => {});
+    publicAPI.getStats()
+      .then(setStats)
+      .catch(() => {})
+      .finally(() => setStatsLoading(false));
   }, []);
 
+  const fmt = (n, suffix = '') => statsLoading ? '…' : `${n.toLocaleString('en-IN')}${suffix}`;
   const statCards = [
-    { label: 'Verified Suppliers', value: stats.suppliers > 0 ? `${stats.suppliers}+` : '…' },
-    { label: 'Industrial Buyers',  value: stats.buyers > 0    ? `${stats.buyers}+`    : '…' },
-    { label: 'Tonnes Traded',      value: stats.tonnesTraded > 0 ? `${stats.tonnesTraded.toLocaleString('en-IN')}+` : '…' },
-    { label: 'States Covered',     value: stats.states > 0    ? `${stats.states}`     : '…' },
+    { label: 'Verified Suppliers', value: fmt(stats.suppliers, '+') },
+    { label: 'Industrial Buyers',  value: fmt(stats.buyers, '+') },
+    { label: 'Tonnes Traded',      value: fmt(stats.tonnesTraded, '+') },
+    { label: 'States Covered',     value: fmt(stats.states) },
   ];
 
   return (
