@@ -1,13 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../components/shared/Navbar';
-
-const stats = [
-  { label: 'Verified Suppliers', value: '1,200+' },
-  { label: 'Industrial Buyers', value: '450+' },
-  { label: 'Tonnes Traded', value: '8,500+' },
-  { label: 'States Covered', value: '18' },
-];
 
 const steps = [
   { icon: '📋', title: 'Supplier Lists Biomass', desc: 'Upload quantity, quality specs (moisture, calorific value), location, and minimum price.' },
@@ -16,9 +9,22 @@ const steps = [
   { icon: '🚚', title: 'Delivery & Release', desc: 'Supplier dispatches biomass. On buyer confirmation, payment is released from escrow.' },
 ];
 
-const biomassTypes = ['Rice Husk', 'Sugarcane Bagasse', 'Wood Chips', 'Cotton Stalks', 'Wheat Straw', 'Corn Cobs', 'Bamboo'];
+const biomassTypes = ['Rice Husk', 'Sugarcane Bagasse', 'Wood Chips', 'Cotton Stalks', 'Wheat Straw', 'Corn Cobs', 'Bamboo', 'Mustard Husk', 'Sugarcane Husk', 'Peanut Husk'];
 
 export default function Landing() {
+  const [stats, setStats] = useState({ suppliers: 0, buyers: 0, tonnesTraded: 0, states: 0 });
+
+  useEffect(() => {
+    fetch('/api/public/stats').then((r) => r.json()).then(setStats).catch(() => {});
+  }, []);
+
+  const statCards = [
+    { label: 'Verified Suppliers', value: stats.suppliers > 0 ? `${stats.suppliers}+` : '…' },
+    { label: 'Industrial Buyers',  value: stats.buyers > 0    ? `${stats.buyers}+`    : '…' },
+    { label: 'Tonnes Traded',      value: stats.tonnesTraded > 0 ? `${stats.tonnesTraded.toLocaleString('en-IN')}+` : '…' },
+    { label: 'States Covered',     value: stats.states > 0    ? `${stats.states}`     : '…' },
+  ];
+
   return (
     <div className="min-h-screen">
       <Navbar />
@@ -39,10 +45,10 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Stats */}
+      {/* Stats — live data from API */}
       <section className="bg-white py-12 border-b">
         <div className="max-w-5xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-          {stats.map((s) => (
+          {statCards.map((s) => (
             <div key={s.label}>
               <p className="text-3xl font-bold text-primary">{s.value}</p>
               <p className="text-gray-600 text-sm mt-1">{s.label}</p>
@@ -82,7 +88,7 @@ export default function Landing() {
       {/* CTA */}
       <section className="bg-primary py-16 px-4 text-white text-center">
         <h2 className="text-3xl font-bold mb-4">Ready to Trade Smarter?</h2>
-        <p className="text-green-100 mb-8 max-w-xl mx-auto">Join 1,600+ suppliers and buyers on India's most transparent biomass marketplace.</p>
+        <p className="text-green-100 mb-8 max-w-xl mx-auto">Join suppliers and buyers on India's most transparent biomass marketplace.</p>
         <div className="flex gap-4 justify-center flex-wrap">
           <Link to="/register?role=supplier" className="bg-white text-primary font-bold px-6 py-3 rounded-xl hover:bg-green-50 transition-colors">Register as Supplier</Link>
           <Link to="/register?role=buyer" className="bg-accent font-bold px-6 py-3 rounded-xl hover:bg-accent-dark transition-colors">Register as Buyer</Link>

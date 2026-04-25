@@ -215,30 +215,25 @@ export default function BuyerOrderDetail() {
             {order.status === 'IN_TRANSIT' && (
               <div className="card">
                 <p className="font-semibold text-gray-800 mb-3">Order In Transit</p>
-                <button onClick={handleConfirmDelivery} className="btn-primary w-full mb-3">
-                  Confirm Delivery & Release Payment
+                <button onClick={handleConfirmDelivery} className="btn-primary w-full mb-4">
+                  ✅ Confirm Delivery & Release Payment
                 </button>
-                <details>
-                  <summary className="text-sm text-red-600 cursor-pointer hover:underline">
-                    Raise a dispute instead
-                  </summary>
-                  <form onSubmit={handleDispute} className="mt-3 space-y-2">
-                    <textarea
-                      className="input h-24 resize-none"
-                      value={disputeReason}
-                      onChange={(e) => setDisputeReason(e.target.value)}
-                      placeholder="Describe the issue with the delivery…"
-                      required
-                    />
-                    <button
-                      type="submit"
-                      disabled={disputing}
-                      className="text-sm border border-red-300 text-red-600 px-4 py-2 rounded-lg w-full hover:bg-red-50"
-                    >
-                      {disputing ? 'Raising…' : 'Raise Dispute'}
-                    </button>
-                  </form>
-                </details>
+                <div className="border-t pt-4">
+                  <p className="text-sm font-semibold text-red-600 mb-2">Problem with delivery?</p>
+                  <textarea
+                    className="input h-20 resize-none mb-2"
+                    value={disputeReason}
+                    onChange={(e) => setDisputeReason(e.target.value)}
+                    placeholder="Describe the issue (wrong quantity, poor quality, not delivered…)"
+                  />
+                  <button
+                    onClick={handleDispute}
+                    disabled={disputing || !disputeReason.trim()}
+                    className="w-full border border-red-300 text-red-600 px-4 py-2 rounded-lg hover:bg-red-50 disabled:opacity-40"
+                  >
+                    {disputing ? 'Raising…' : '⚠️ Raise Dispute'}
+                  </button>
+                </div>
               </div>
             )}
 

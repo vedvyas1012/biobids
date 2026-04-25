@@ -8,16 +8,18 @@ const {
 
 // Public
 router.get('/', getListings);
+
+// /supplier/my MUST be before /:id — otherwise Express matches 'supplier' as an id param
+router.get('/supplier/my', authenticate, requireRole('supplier'), getMyListings);
+
 router.get('/:id', getListingById);
 
-// Supplier only
-router.use(authenticate);
-router.get('/supplier/my', requireRole('supplier'), getMyListings);
-router.post('/', requireRole('supplier'), (req, res, next) => {
+// Supplier-only mutations
+router.post('/', authenticate, requireRole('supplier'), (req, res, next) => {
   req.uploadDir = 'listings';
   next();
 }, upload.array('files', 5), createListing);
-router.put('/:id', requireRole('supplier'), updateListing);
-router.delete('/:id', requireRole('supplier'), deleteListing);
+router.put('/:id', authenticate, requireRole('supplier'), updateListing);
+router.delete('/:id', authenticate, requireRole('supplier'), deleteListing);
 
 module.exports = router;

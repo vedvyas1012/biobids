@@ -9,9 +9,13 @@ const COLORS = ['#2d6a4f', '#40916c', '#f77f00', '#1b4332', '#74c69d', '#d8f3dc'
 export default function AdminDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [openDisputes, setOpenDisputes] = useState(0);
 
   useEffect(() => {
     adminAPI.getAnalytics().then(({ data }) => setData(data)).finally(() => setLoading(false));
+    adminAPI.getDisputes()
+      .then(({ data }) => setOpenDisputes(data.filter((d) => d.status === 'OPEN').length))
+      .catch(() => {});
   }, []);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" /></div>;
@@ -72,13 +76,16 @@ export default function AdminDashboard() {
           {[
             { label: 'Manage Users', to: '/admin/users', icon: '👥', desc: 'View and manage all users' },
             { label: 'All Orders', to: '/admin/orders', icon: '📦', desc: 'Monitor all platform orders' },
-            { label: 'Disputes', to: '/admin/disputes', icon: '⚖️', desc: 'Resolve buyer-supplier disputes' },
+            { label: 'Disputes', to: '/admin/disputes', icon: '⚖️', desc: 'Resolve buyer-supplier disputes', badge: openDisputes },
             { label: 'Transactions', to: '/admin/transactions', icon: '💳', desc: 'Full transaction log' },
           ].map((item) => (
             <Link key={item.label} to={item.to} className="card hover:shadow-md transition-shadow text-center cursor-pointer block">
               <p className="text-3xl mb-2">{item.icon}</p>
               <p className="font-semibold text-gray-800">{item.label}</p>
               <p className="text-xs text-gray-500 mt-1">{item.desc}</p>
+              {item.badge > 0 && (
+                <span className="inline-block mt-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{item.badge} open</span>
+              )}
             </Link>
           ))}
         </div>

@@ -50,6 +50,10 @@ const login = async (req, res) => {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return res.status(401).json({ message: 'Invalid credentials' });
 
+    if (user.is_active === false) {
+      return res.status(403).json({ message: 'Account has been suspended. Contact support.' });
+    }
+
     const { token, refreshToken } = generateTokens(user);
     await user.update({ refresh_token: refreshToken });
 

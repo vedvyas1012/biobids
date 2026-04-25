@@ -25,8 +25,10 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/public', require('./routes/public'));
 app.use('/api/listings', require('./routes/listings'));
-app.use('/api', require('./routes/bids'));            // /api/listings/:id/bids + /api/bids/:id/*
+app.use('/api/listings', require('./routes/listingBids')); // POST/GET /:id/bids
+app.use('/api/bids', require('./routes/bids'));            // GET /my, PUT /:id/accept, PUT /:id/reject
 app.use('/api/orders', require('./routes/orders'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/notifications', require('./routes/notifications'));
@@ -34,6 +36,14 @@ app.use('/api/admin', require('./routes/admin'));
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'ok', ts: new Date() }));
+
+// Serve React frontend in production
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../client/dist')));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+  });
+}
 
 // Socket.io
 setPaymentIo(io);

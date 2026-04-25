@@ -78,6 +78,8 @@ export const notificationsAPI = {
 
 export const adminAPI = {
   getUsers: () => api.get('/admin/users'),
+  toggleUserStatus: (id) => api.patch(`/admin/users/${id}/toggle-status`),
+  getUserActivity: (id) => api.get(`/admin/users/${id}/activity`),
   getListings: () => api.get('/admin/listings'),
   getOrders: () => api.get('/admin/orders'),
   getTransactions: () => api.get('/admin/transactions'),
@@ -86,6 +88,10 @@ export const adminAPI = {
   getAnalytics: () => api.get('/admin/analytics'),
   getSupplierAnalytics: () => api.get('/admin/analytics/supplier'),
   getBuyerAnalytics: () => api.get('/admin/analytics/buyer'),
+};
+
+export const publicAPI = {
+  getStats: () => fetch('/api/public/stats').then((r) => r.json()),
 };
 
 export default api;

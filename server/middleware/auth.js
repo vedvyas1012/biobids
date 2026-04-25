@@ -27,4 +27,17 @@ const requireRole = (...roles) => (req, res, next) => {
   next();
 };
 
-module.exports = { authenticate, requireRole };
+// Like authenticate but non-blocking — attaches req.user if token present, otherwise continues
+const optionalAuth = async (req, res, next) => {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) return next();
+  try {
+    const decoded = jwt.verify(header.split(' ')[1], process.env.JWT_SECRET);
+    req.user = await User.findByPk(decoded.id, {
+      attributes: { exclude: ['password', 'refresh_token'] },
+    });
+  } catch {}
+  next();
+};
+
+module.exports = { authenticate, requireRole, optionalAuth };

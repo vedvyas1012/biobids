@@ -1,12 +1,12 @@
 const router = require('express').Router();
 const { authenticate, requireRole } = require('../middleware/auth');
-const { placeBid, getBids, acceptBid, rejectBid, getMyBids } = require('../controllers/bidController');
+const { acceptBid, rejectBid, getMyBids } = require('../controllers/bidController');
 
-router.use(authenticate);
-router.get('/my', requireRole('buyer'), getMyBids);
-router.post('/listings/:id/bids', requireRole('buyer'), placeBid);
-router.get('/listings/:id/bids', getBids);
-router.put('/:id/accept', requireRole('supplier'), acceptBid);
-router.put('/:id/reject', requireRole('supplier'), rejectBid);
+// GET  /api/bids/my           — buyer's own bids
+// PUT  /api/bids/:id/accept   — supplier accepts a bid
+// PUT  /api/bids/:id/reject   — supplier rejects a bid
+router.get('/my', authenticate, requireRole('buyer'), getMyBids);
+router.put('/:id/accept', authenticate, requireRole('supplier'), acceptBid);
+router.put('/:id/reject', authenticate, requireRole('supplier'), rejectBid);
 
 module.exports = router;

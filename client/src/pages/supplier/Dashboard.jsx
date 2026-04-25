@@ -14,9 +14,9 @@ export default function SupplierDashboard() {
 
   useEffect(() => {
     Promise.all([
-      listingsAPI.getMy(),
-      ordersAPI.getAll(),
-      adminAPI.getSupplierAnalytics(),
+      listingsAPI.getMy().catch(() => ({ data: [] })),
+      ordersAPI.getAll().catch(() => ({ data: [] })),
+      adminAPI.getSupplierAnalytics().catch(() => ({ data: null })),
     ]).then(([l, o, a]) => {
       setListings(l.data.slice(0, 5));
       setOrders(o.data.slice(0, 5));

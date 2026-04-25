@@ -4,6 +4,30 @@ import { useAuth } from '../../context/AuthContext';
 import { notificationsAPI } from '../../services/api';
 import toast from 'react-hot-toast';
 
+const getNotificationPath = (n, userRole) => {
+  if (!n.reference_id) return null;
+  switch (n.type) {
+    case 'bid_received':
+      return `/listings/${n.reference_id}`;
+    case 'bid_accepted':
+    case 'payment_escrowed':
+    case 'order_dispatched':
+    case 'payment_released':
+      return userRole === 'supplier'
+        ? `/dashboard/supplier/orders/${n.reference_id}`
+        : `/dashboard/buyer/orders/${n.reference_id}`;
+    case 'dispute_raised':
+    case 'dispute_resolved':
+      return userRole === 'admin'
+        ? '/admin/disputes'
+        : userRole === 'supplier'
+        ? `/dashboard/supplier/orders/${n.reference_id}`
+        : `/dashboard/buyer/orders/${n.reference_id}`;
+    default:
+      return null;
+  }
+};
+
 export default function Navbar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -38,7 +62,8 @@ export default function Navbar() {
     <nav className="bg-primary shadow-lg">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
-          <Link to="/" className="flex items-center gap-2">
+          {/* Logo — goes to dashboard if logged in, landing if not */}
+          <Link to={user ? dashPath : '/'} className="flex items-center gap-2">
             <span className="text-2xl">🌿</span>
             <span className="text-white text-xl font-bold">BioBids</span>
           </Link>
@@ -71,7 +96,17 @@ export default function Navbar() {
                         {notifs.length === 0 ? (
                           <p className="p-4 text-sm text-gray-500 text-center">No notifications</p>
                         ) : notifs.slice(0, 10).map((n) => (
-                          <div key={n.id} className={`px-4 py-3 border-b hover:bg-gray-50 ${!n.is_read ? 'bg-green-50' : ''}`}>
+                          <div
+                            key={n.id}
+                            onClick={async () => {
+                              await notificationsAPI.markRead(n.id).catch(() => {});
+                              const path = getNotificationPath(n, user?.role);
+                              setShowNotifs(false);
+                              if (path) navigate(path);
+                              fetchNotifications();
+                            }}
+                            className={`px-4 py-3 border-b hover:bg-gray-50 cursor-pointer ${!n.is_read ? 'bg-green-50' : ''}`}
+                          >
                             <p className="text-sm font-medium text-gray-800">{n.title}</p>
                             <p className="text-xs text-gray-500 mt-0.5">{n.message}</p>
                           </div>

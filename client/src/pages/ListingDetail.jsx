@@ -106,6 +106,8 @@ export default function ListingDetail() {
                         <div>
                           <p className="font-semibold">{bid.buyer?.name}</p>
                           <p className="text-sm text-gray-500">{bid.quantity_requested}t · ₹{(bid.price_per_tonne / 100).toLocaleString('en-IN')}/t</p>
+                          {bid.notes && <p className="text-xs text-gray-400 mt-1 italic">"{bid.notes}"</p>}
+                          {bid.delivery_deadline && <p className="text-xs text-gray-400">Delivery by: {new Date(bid.delivery_deadline).toLocaleDateString('en-IN')}</p>}
                         </div>
                         <div className="flex items-center gap-2">
                           <p className="font-bold text-primary">₹{(bid.total_amount / 100).toLocaleString('en-IN')}</p>

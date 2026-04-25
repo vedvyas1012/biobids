@@ -144,10 +144,10 @@ const resolveDispute = async (req, res) => {
 const getAnalytics = async (req, res) => {
   try {
     const [totalUsers, totalListings, totalOrders, transactions] = await Promise.all([
-      User.count(),
-      Listing.count(),
-      Order.count(),
-      Transaction.findAll({ where: { status: 'SUCCESS', type: 'ESCROW' } }),
+      User.count().catch(() => 0),
+      Listing.count().catch(() => 0),
+      Order.count().catch(() => 0),
+      Transaction.findAll({ where: { status: 'SUCCESS', type: 'ESCROW' } }).catch(() => []),
     ]);
 
     const gmv = transactions.reduce((sum, t) => sum + parseInt(t.amount), 0);
@@ -155,11 +155,10 @@ const getAnalytics = async (req, res) => {
     const completedOrders = await Order.count({ where: { status: 'COMPLETED' } });
     const activeListings = await Listing.count({ where: { status: 'ACTIVE' } });
 
-    // Orders by state
-    const ordersByState = await Order.findAll({
-      attributes: ['listings.location_state', [fn('COUNT', col('Order.id')), 'count']],
-      include: [{ model: Listing, as: 'listing', attributes: [] }],
-      group: ['listings.location_state'],
+    // Orders by state — use Listing table directly (avoids brittle cross-table JOIN)
+    const ordersByState = await Listing.findAll({
+      attributes: ['location_state', [fn('COUNT', col('id')), 'count']],
+      group: ['location_state'],
       raw: true,
     });
 
@@ -229,4 +228,29 @@ const getBuyerAnalytics = async (req, res) => {
   }
 };
 
-module.exports = { getUsers, getAllListings, getAllOrders, getAllTransactions, getDisputes, resolveDispute, getAnalytics, getSupplierAnalytics, getBuyerAnalytics };
+const toggleUserStatus = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (user.role === 'admin') return res.status(403).json({ message: 'Cannot modify admin accounts' });
+    await user.update({ is_active: !user.is_active });
+    res.json({ message: `User ${user.is_active ? 'activated' : 'deactivated'}`, is_active: user.is_active });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+};
+
+const getUserActivity = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id, {
+      attributes: { exclude: ['password', 'refresh_token'] },
+    });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const [listings, bids, orders] = await Promise.all([
+      Listing.count({ where: { supplier_id: req.params.id } }),
+      Bid.count({ where: { buyer_id: req.params.id } }),
+      Order.count({ where: { [Op.or]: [{ supplier_id: req.params.id }, { buyer_id: req.params.id }] } }),
+    ]);
+    res.json({ user, listings, bids, orders });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+};
+
+module.exports = { getUsers, getAllListings, getAllOrders, getAllTransactions, getDisputes, resolveDispute, getAnalytics, getSupplierAnalytics, getBuyerAnalytics, toggleUserStatus, getUserActivity };

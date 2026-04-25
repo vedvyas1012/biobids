@@ -10,7 +10,7 @@ const getListings = async (req, res) => {
       moisture_max, calorific_min, price_max, page = 1, limit = 12,
     } = req.query;
 
-    const where = { status: 'ACTIVE' };
+    const where = { status: ['ACTIVE', 'BIDDING'] };
     if (type) where.biomass_type = type;
     if (location_state) where.location_state = location_state;
     if (quantity_min || quantity_max) {

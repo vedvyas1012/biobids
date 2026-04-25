@@ -13,9 +13,15 @@ export default function BuyerDashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([bidsAPI.getMy(), ordersAPI.getAll(), adminAPI.getBuyerAnalytics()])
-      .then(([b, o, a]) => { setBids(b.data.slice(0, 5)); setOrders(o.data.slice(0, 5)); setAnalytics(a.data); })
-      .finally(() => setLoading(false));
+    Promise.all([
+      bidsAPI.getMy().catch(() => ({ data: [] })),
+      ordersAPI.getAll().catch(() => ({ data: [] })),
+      adminAPI.getBuyerAnalytics().catch(() => ({ data: null })),
+    ]).then(([b, o, a]) => {
+      setBids(b.data.slice(0, 5));
+      setOrders(o.data.slice(0, 5));
+      setAnalytics(a.data);
+    }).finally(() => setLoading(false));
   }, []);
 
   const cards = analytics ? [
