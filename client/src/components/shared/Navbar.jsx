@@ -37,12 +37,6 @@ export default function Navbar() {
   const [notifs, setNotifs] = useState([]);
   const [showNotifs, setShowNotifs] = useState(false);
 
-  useEffect(() => {
-    if (user) fetchNotifications();
-    const interval = setInterval(() => { if (user) fetchNotifications(); }, 30000);
-    return () => clearInterval(interval);
-  }, [user, fetchNotifications]);
-
   const fetchNotifications = useCallback(async () => {
     try {
       const { data } = await notificationsAPI.getAll();
@@ -50,6 +44,12 @@ export default function Navbar() {
       setUnread(data.unreadCount);
     } catch {}
   }, []);
+
+  useEffect(() => {
+    if (user) fetchNotifications();
+    const interval = setInterval(() => { if (user) fetchNotifications(); }, 30000);
+    return () => clearInterval(interval);
+  }, [user, fetchNotifications]);
 
   const handleLogout = async () => {
     await logout();
