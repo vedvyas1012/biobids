@@ -55,7 +55,8 @@ const initiatePayment = async (req, res) => {
     const supplier = order.supplier;
     const listing  = order.bid?.listing;
 
-    // 1. Ensure both parties exist as Escrow.com customers (safe to call repeatedly)
+    // 1. Ensure both parties exist as Escrow.com customers (non-fatal —
+    //    sandbox accounts may lack partner-level access to create customers)
     const buyerName    = splitName(buyer.name);
     const supplierName = splitName(supplier.name);
     await Promise.all([
@@ -64,13 +65,13 @@ const initiatePayment = async (req, res) => {
         firstName: buyerName.firstName,
         lastName:  buyerName.lastName,
         phone:     buyer.phone,
-      }),
+      }).catch((e) => console.warn('[Payment] createEscrowCustomer buyer (non-fatal):', e.response?.data?.error || e.message)),
       createEscrowCustomer({
         email:     supplier.email,
         firstName: supplierName.firstName,
         lastName:  supplierName.lastName,
         phone:     supplier.phone,
-      }),
+      }).catch((e) => console.warn('[Payment] createEscrowCustomer supplier (non-fatal):', e.response?.data?.error || e.message)),
     ]);
 
     // 2. Create the Escrow.com transaction
