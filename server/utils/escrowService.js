@@ -19,7 +19,7 @@ async function createEscrowTransaction(order, buyerEmail, sellerEmail, opts = {}
 
   const payload = {
     parties: [
-      { role: 'buyer',  customer: buyerEmail  },
+      { role: 'buyer',  customer: buyerEmail,  initiator: true },
       { role: 'seller', customer: sellerEmail },
     ],
     currency: 'usd',
@@ -41,7 +41,7 @@ async function createEscrowTransaction(order, buyerEmail, sellerEmail, opts = {}
           },
         ],
         fees: [
-          { type: 'escrow', payer_customer: buyerEmail },
+          { type: 'escrow', payer_customer: buyerEmail, split: 1 },
         ],
       },
     ],
