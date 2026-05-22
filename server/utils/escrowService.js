@@ -23,10 +23,10 @@ async function createEscrowTransaction(order, buyerEmail, sellerEmail, opts = {}
       { role: 'seller', customer: sellerEmail },
     ],
     currency: 'usd',
-    description: `BioBids Order #${order.id} — ${biomassType} ${quantity}T`,
+    description: `BioBids Order #${order.id} - ${biomassType} ${quantity}T`,
     items: [
       {
-        title: `${biomassType} Biomass — ${quantity} tonnes`,
+        title: `${biomassType} Biomass - ${quantity} tonnes`,
         description: moisture && calorific
           ? `Quality-verified biomass. Moisture: ${moisture}%, Calorific Value: ${calorific} kcal/kg. Location: ${location}`
           : `BioBids Order #${order.id}`,
@@ -40,10 +40,8 @@ async function createEscrowTransaction(order, buyerEmail, sellerEmail, opts = {}
             beneficiary_customer: sellerEmail,
           },
         ],
-        // Two entries required — each anchors a payer_customer to their 50% share
         fees: [
-          { type: 'escrow', payer_customer: buyerEmail,  split: 0.5 },
-          { type: 'escrow', payer_customer: sellerEmail, split: 0.5 },
+          { type: 'escrow', payer_customer: buyerEmail },
         ],
       },
     ],
