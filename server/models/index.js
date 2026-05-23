@@ -18,6 +18,7 @@ User.hasMany(Notification, { foreignKey: 'user_id', as: 'notifications' });
 // Listing associations
 Listing.belongsTo(User, { foreignKey: 'supplier_id', as: 'supplier' });
 Listing.hasMany(Bid, { foreignKey: 'listing_id', as: 'bids' });
+Listing.hasMany(Bid, { foreignKey: 'listing_id', as: 'bidHistory' });
 Listing.hasMany(ListingMedia, { foreignKey: 'listing_id', as: 'media' });
 Listing.hasMany(Order, { foreignKey: 'listing_id', as: 'orders' });
 

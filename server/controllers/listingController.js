@@ -51,6 +51,12 @@ const getListingById = async (req, res) => {
           include: [{ model: User, as: 'buyer', attributes: ['id', 'name'] }],
           order: [['price_per_tonne', 'DESC']],
         },
+        {
+          model: Bid, as: 'bidHistory',
+          required: false,
+          include: [{ model: User, as: 'buyer', attributes: ['id'] }],
+          order: [['created_at', 'DESC']],
+        },
       ],
     });
     if (!listing) return res.status(404).json({ message: 'Listing not found' });

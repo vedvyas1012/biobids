@@ -32,6 +32,17 @@ export default function AdminUsers() {
     }
   };
 
+  const handleVerifyGST = async (user) => {
+    const newState = !user.gst_verified;
+    try {
+      await adminAPI.verifyGST(user.id, newState);
+      toast.success(`GST ${newState ? 'verified' : 'unverified'} for ${user.name}`);
+      loadUsers();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update GST verification');
+    }
+  };
+
   const handleViewActivity = (userId) => {
     // Cancel any in-flight request for a previous user
     if (activityAbortRef.current) activityAbortRef.current.abort();
@@ -67,7 +78,7 @@ export default function AdminUsers() {
             <table className="w-full">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  {['ID', 'Name', 'Email', 'Role', 'State', 'Status', 'Joined', 'Actions'].map((h) => (
+                  {['ID', 'Name', 'Email', 'Role', 'State', 'GST', 'Status', 'Joined', 'Actions'].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-600 uppercase">{h}</th>
                   ))}
                 </tr>
@@ -82,6 +93,15 @@ export default function AdminUsers() {
                       <span className={`badge ${u.role === 'supplier' ? 'badge-green' : u.role === 'admin' ? 'badge-red' : 'badge-blue'}`}>{u.role}</span>
                     </td>
                     <td className="px-4 py-3 text-sm">{u.location_state || '—'}</td>
+                    <td className="px-4 py-3 text-sm">
+                      {u.role === 'buyer' ? (
+                        u.gst_number ? (
+                          <span className={`inline-flex items-center gap-1 text-xs font-medium ${u.gst_verified ? 'text-green-700' : 'text-amber-600'}`}>
+                            {u.gst_verified ? '✅ Verified' : '⚠️ Pending'}
+                          </span>
+                        ) : <span className="text-xs text-gray-400">No GST</span>
+                      ) : <span className="text-xs text-gray-300">—</span>}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${u.is_active !== false ? 'text-green-700' : 'text-red-600'}`}>
                         <span className={`w-2 h-2 rounded-full ${u.is_active !== false ? 'bg-green-500' : 'bg-red-500'}`} />
@@ -91,7 +111,7 @@ export default function AdminUsers() {
                     <td className="px-4 py-3 text-sm text-gray-500">{new Date(u.created_at).toLocaleDateString()}</td>
                     <td className="px-4 py-3">
                       {u.role !== 'admin' && (
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           <button
                             onClick={() => handleToggleStatus(u)}
                             className={`text-xs px-2 py-1 rounded border ${u.is_active !== false ? 'border-red-300 text-red-600 hover:bg-red-50' : 'border-green-300 text-green-700 hover:bg-green-50'}`}
@@ -104,6 +124,15 @@ export default function AdminUsers() {
                           >
                             Activity
                           </button>
+                          {u.role === 'buyer' && u.gst_number && (
+                            <button
+                              onClick={() => handleVerifyGST(u)}
+                              className={`text-xs px-2 py-1 rounded border ${u.gst_verified ? 'border-gray-300 text-gray-500 hover:bg-gray-50' : 'border-green-400 text-green-700 hover:bg-green-50'}`}
+                              title={u.gst_verified ? 'Click to unverify GST' : `Verify GST: ${u.gst_number}`}
+                            >
+                              {u.gst_verified ? 'Unverify GST' : '✓ Verify GST'}
+                            </button>
+                          )}
                         </div>
                       )}
                     </td>

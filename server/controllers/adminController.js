@@ -288,4 +288,15 @@ const getUserActivity = async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-module.exports = { getUsers, getAllListings, getAllOrders, getAllTransactions, getDisputes, resolveDispute, getAnalytics, getSupplierAnalytics, getBuyerAnalytics, toggleUserStatus, getUserActivity };
+const verifyGST = async (req, res) => {
+  try {
+    const user = await User.findByPk(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (user.role !== 'buyer') return res.status(400).json({ message: 'GST verification is only for buyers' });
+    const gst_verified = req.body.gst_verified !== undefined ? req.body.gst_verified : true;
+    await user.update({ gst_verified });
+    res.json({ message: `GST ${gst_verified ? 'verified' : 'unverified'} successfully`, gst_verified });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+};
+
+module.exports = { getUsers, getAllListings, getAllOrders, getAllTransactions, getDisputes, resolveDispute, getAnalytics, getSupplierAnalytics, getBuyerAnalytics, toggleUserStatus, getUserActivity, verifyGST };

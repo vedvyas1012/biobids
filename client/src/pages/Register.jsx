@@ -73,6 +73,7 @@ export default function Register() {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">GST Number</label>
               <input className="input" value={form.gst_number} onChange={set('gst_number')} placeholder="22AAAAA0000A1Z5" />
+              <p className="text-xs text-amber-600 mt-1">⚠️ GST number will be verified by admin before you can place bids</p>
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">

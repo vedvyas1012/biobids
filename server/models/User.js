@@ -11,8 +11,9 @@ const User = sequelize.define('User', {
   gst_number: { type: DataTypes.STRING(20), allowNull: true },
   location_state: { type: DataTypes.STRING(100), allowNull: true },
   location_district: { type: DataTypes.STRING(100), allowNull: true },
-  is_verified: { type: DataTypes.BOOLEAN, defaultValue: false },
-  is_active:   { type: DataTypes.BOOLEAN, defaultValue: true },
+  is_verified:  { type: DataTypes.BOOLEAN, defaultValue: false },
+  gst_verified: { type: DataTypes.BOOLEAN, defaultValue: false },
+  is_active:    { type: DataTypes.BOOLEAN, defaultValue: true },
   refresh_token: { type: DataTypes.TEXT, allowNull: true },
 }, {
   tableName: 'users',

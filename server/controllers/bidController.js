@@ -25,8 +25,15 @@ const placeBid = async (req, res) => {
       return res.status(400).json({ message: `Only ${listing.available_quantity} tonnes available` });
     }
 
+    // Check active bid limit (max 5 PENDING bids across all listings)
+    const activeBidCount = await Bid.count({ where: { buyer_id: buyerId, status: 'PENDING' } });
+
     // Check if buyer already has a PENDING bid on this listing
     const existingBid = await Bid.findOne({ where: { listing_id: listingId, buyer_id: buyerId, status: 'PENDING' } });
+    if (!existingBid && activeBidCount >= 5) {
+      return res.status(400).json({ message: 'You can have maximum 5 active bids at a time. Please wait for existing bids to be resolved.' });
+    }
+
     if (existingBid) {
       // Update existing bid
       const priceInPaise = Math.round(price_per_tonne * 100);

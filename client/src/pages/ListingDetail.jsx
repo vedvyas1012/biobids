@@ -5,6 +5,7 @@ import { listingsAPI, bidsAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import StatusBadge from '../components/shared/StatusBadge';
+import BidHistoryTable from '../components/shared/BidHistoryTable';
 import toast from 'react-hot-toast';
 
 export default function ListingDetail() {
@@ -14,6 +15,7 @@ export default function ListingDetail() {
   const navigate = useNavigate();
   const [listing, setListing] = useState(null);
   const [bids, setBids] = useState([]);
+  const [bidHistory, setBidHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [bidForm, setBidForm] = useState({ quantity_requested: '', price_per_tonne: '', delivery_deadline: '', notes: '' });
   const [submitting, setSubmitting] = useState(false);
@@ -38,6 +40,7 @@ export default function ListingDetail() {
       const { data } = await listingsAPI.getById(id);
       setListing(data);
       setBids(data.bids || []);
+      setBidHistory(data.bidHistory || []);
     } catch { navigate('/listings'); }
     finally { setLoading(false); }
   };
@@ -95,7 +98,10 @@ export default function ListingDetail() {
               {listing.description && <p className="text-gray-600 mt-4 text-sm">{listing.description}</p>}
             </div>
 
-            {/* Bid History */}
+            {/* Public Bid History Table — visible to all users */}
+            <BidHistoryTable bids={bidHistory} />
+
+            {/* Bids Received — supplier/admin action panel */}
             {(user?.role === 'supplier' && listing.supplier_id === user.id) || user?.role === 'admin' ? (
               <div className="card">
                 <h2 className="text-lg font-bold text-gray-800 mb-4">Bids Received ({bids.length})</h2>
