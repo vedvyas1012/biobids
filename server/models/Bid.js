@@ -15,6 +15,13 @@ const Bid = sequelize.define('Bid', {
   },
   expires_at: { type: DataTypes.DATE, allowNull: true },
   notes: { type: DataTypes.TEXT, allowNull: true },
+  // Razorpay bid security deposit
+  deposit_order_id:   { type: DataTypes.STRING(100), allowNull: true },
+  deposit_payment_id: { type: DataTypes.STRING(100), allowNull: true },
+  deposit_status: {
+    type: DataTypes.ENUM('UNPAID', 'PAID', 'REFUNDED', 'FORFEITED'),
+    defaultValue: 'UNPAID',
+  },
 }, {
   tableName: 'bids',
   timestamps: true,

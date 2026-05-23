@@ -1,5 +1,6 @@
 const { Bid, Listing, Order, User } = require('../models');
 const { notifyBidReceived, notifyBidAccepted, notifyBidRejected } = require('../utils/notifications');
+const { createDepositOrder, refundPayment, isRazorpayConfigured } = require('../utils/razorpayService');
 
 // io instance will be set via setIo
 let io;
@@ -68,7 +69,25 @@ const placeBid = async (req, res) => {
     });
     if (io) io.to(`listing_${listingId}`).emit('new_bid', { listingId, bid: bidWithBuyer });
 
-    res.status(201).json(bid);
+    // Create Razorpay deposit order (₹1,000 security deposit)
+    let depositOrder = null;
+    if (isRazorpayConfigured()) {
+      try {
+        const rzOrder = await createDepositOrder(bid.id, req.user.email);
+        await bid.update({ deposit_order_id: rzOrder.id });
+        depositOrder = {
+          id:       rzOrder.id,
+          amount:   rzOrder.amount,
+          currency: rzOrder.currency,
+          key:      process.env.RAZORPAY_KEY_ID,
+        };
+      } catch (e) {
+        console.error('[Deposit] Failed to create Razorpay order:', e.message);
+        // Non-fatal — bid is still placed, buyer will be prompted on next load
+      }
+    }
+
+    res.status(201).json({ bid: bidWithBuyer, depositOrder });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -152,6 +171,13 @@ const rejectBid = async (req, res) => {
 
     await bid.update({ status: 'REJECTED' });
     await notifyBidRejected(bid.buyer_id, bid.listing_id);
+
+    // Auto-refund deposit if it was paid
+    if (bid.deposit_payment_id && bid.deposit_status === 'PAID') {
+      refundPayment(bid.deposit_payment_id, 'bid_rejected_by_supplier')
+        .then(() => bid.update({ deposit_status: 'REFUNDED' }))
+        .catch((e) => console.error('[Deposit] Refund failed for bid', bid.id, e.message));
+    }
 
     res.json({ message: 'Bid rejected' });
   } catch (err) {

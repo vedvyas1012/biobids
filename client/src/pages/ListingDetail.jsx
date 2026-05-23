@@ -7,6 +7,8 @@ import { useSocket } from '../context/SocketContext';
 import StatusBadge from '../components/shared/StatusBadge';
 import BidHistoryTable from '../components/shared/BidHistoryTable';
 import BidPriceChart from '../components/shared/BidPriceChart';
+import { useRazorpay } from '../hooks/useRazorpay';
+import { depositsAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
 export default function ListingDetail() {
@@ -14,6 +16,7 @@ export default function ListingDetail() {
   const { user } = useAuth();
   const { joinListing, leaveListing, on } = useSocket() || {};
   const navigate = useNavigate();
+  const { openCheckout } = useRazorpay();
   const [listing, setListing] = useState(null);
   const [bids, setBids] = useState([]);
   const [bidHistory, setBidHistory] = useState([]);
@@ -50,13 +53,54 @@ export default function ListingDetail() {
     e.preventDefault();
     if (!user) { navigate('/login'); return; }
     setSubmitting(true);
+    let placedBid = null;
     try {
-      await bidsAPI.place(id, bidForm);
-      toast.success('Bid placed successfully!');
+      const { data } = await bidsAPI.place(id, bidForm);
+      placedBid = data.bid;
+
+      // If server returned a Razorpay deposit order, open checkout
+      if (data.depositOrder) {
+        toast('Opening payment for ₹1,000 security deposit…', { icon: '💳' });
+        const payment = await openCheckout({
+          key:         data.depositOrder.key,
+          amount:      data.depositOrder.amount,
+          currency:    data.depositOrder.currency,
+          order_id:    data.depositOrder.id,
+          name:        'BioBids',
+          description: 'Bid Security Deposit — refundable if bid not accepted',
+          prefill:     { email: user.email, contact: user.phone || '' },
+          theme:       { color: '#2d6a4f' },
+          notes:       { bid_id: String(placedBid.id) },
+        });
+
+        // Verify payment server-side
+        await depositsAPI.verify({
+          razorpay_order_id:   payment.razorpay_order_id,
+          razorpay_payment_id: payment.razorpay_payment_id,
+          razorpay_signature:  payment.razorpay_signature,
+          bid_id:              placedBid.id,
+        });
+
+        toast.success('Bid placed! ₹1,000 deposit paid ✓');
+      } else {
+        // Razorpay not configured (dev/staging)
+        toast.success('Bid placed successfully!');
+      }
+
       setBidForm({ quantity_requested: '', price_per_tonne: '', delivery_deadline: '', notes: '' });
+      fetchListing();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to place bid');
-    } finally { setSubmitting(false); }
+      if (err.message === 'cancelled') {
+        // User closed Razorpay modal — withdraw the bid automatically
+        toast.error('Payment cancelled. Your bid has been removed.');
+        if (placedBid) depositsAPI.withdrawBid(placedBid.id).catch(() => {});
+        fetchListing();
+      } else {
+        toast.error(err.response?.data?.message || err.message || 'Failed to place bid');
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" /></div>;

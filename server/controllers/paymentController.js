@@ -8,6 +8,7 @@ const {
 } = require('../utils/escrowService');
 const { splitName } = require('../utils/helpers');
 const { notifyPaymentEscrowed, notifyPaymentReleased } = require('../utils/notifications');
+const { verifySignature, refundPayment } = require('../utils/razorpayService');
 
 let io;
 const setIo = (socketIo) => { io = socketIo; };
@@ -292,4 +293,71 @@ const getTransactions = async (req, res) => {
   }
 };
 
-module.exports = { initiatePayment, getPaymentStatus, handleWebhook, getTransactions, setIo };
+/**
+ * POST /api/payments/verify-deposit
+ * Called by frontend after Razorpay checkout succeeds.
+ * Verifies HMAC signature server-side, marks bid deposit as PAID.
+ */
+const verifyDeposit = async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, bid_id } = req.body;
+
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !bid_id) {
+      return res.status(400).json({ message: 'Missing payment details' });
+    }
+
+    const valid = verifySignature({
+      orderId:   razorpay_order_id,
+      paymentId: razorpay_payment_id,
+      signature: razorpay_signature,
+    });
+    if (!valid) return res.status(400).json({ message: 'Invalid payment signature — possible tampering' });
+
+    const bid = await Bid.findByPk(bid_id);
+    if (!bid) return res.status(404).json({ message: 'Bid not found' });
+    if (bid.buyer_id !== req.user.id) return res.status(403).json({ message: 'Unauthorized' });
+    if (bid.deposit_status === 'PAID') return res.json({ message: 'Deposit already recorded', deposit_status: 'PAID' });
+
+    await bid.update({
+      deposit_payment_id: razorpay_payment_id,
+      deposit_status:     'PAID',
+    });
+
+    console.log(`[Deposit] Bid ${bid_id} deposit PAID — payment ${razorpay_payment_id}`);
+    res.json({ message: 'Deposit verified. Your bid is now active.', deposit_status: 'PAID' });
+  } catch (err) {
+    console.error('verifyDeposit error:', err.message);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/**
+ * POST /api/payments/withdraw-bid/:bid_id
+ * Buyer withdraws their own PENDING bid.
+ * Refunds deposit if PAID; forfeits nothing since bid wasn't accepted.
+ */
+const withdrawBid = async (req, res) => {
+  try {
+    const bid = await Bid.findByPk(req.params.bid_id);
+    if (!bid) return res.status(404).json({ message: 'Bid not found' });
+    if (bid.buyer_id !== req.user.id) return res.status(403).json({ message: 'Unauthorized' });
+    if (!['PENDING'].includes(bid.status)) {
+      return res.status(400).json({ message: 'Only PENDING bids can be withdrawn' });
+    }
+
+    await bid.update({ status: 'WITHDRAWN' });
+
+    // Refund deposit if it was paid
+    if (bid.deposit_payment_id && bid.deposit_status === 'PAID') {
+      refundPayment(bid.deposit_payment_id, 'bid_withdrawn_by_buyer')
+        .then(() => bid.update({ deposit_status: 'REFUNDED' }))
+        .catch((e) => console.error('[Deposit] Refund failed on withdraw for bid', bid.id, e.message));
+    }
+
+    res.json({ message: 'Bid withdrawn' });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { initiatePayment, getPaymentStatus, handleWebhook, getTransactions, setIo, verifyDeposit, withdrawBid };

@@ -76,17 +76,63 @@ const startEscrowCron = () => {
     }
   });
 
-  // Expire bids older than 48 hours
+  // Expire bids older than 48 hours; refund deposit if paid
   cron.schedule('0 * * * *', async () => {
     try {
       const { Bid } = require('../models');
-      const expired = await Bid.update(
-        { status: 'EXPIRED' },
-        { where: { status: 'PENDING', expires_at: { [Op.lte]: new Date() } } }
-      );
-      if (expired[0] > 0) console.log(`[Cron] Expired ${expired[0]} bids`);
+      const { refundPayment } = require('./razorpayService');
+
+      const expiredBids = await Bid.findAll({
+        where: { status: 'PENDING', expires_at: { [Op.lte]: new Date() } },
+      });
+
+      for (const bid of expiredBids) {
+        await bid.update({ status: 'EXPIRED' });
+        if (bid.deposit_payment_id && bid.deposit_status === 'PAID') {
+          refundPayment(bid.deposit_payment_id, 'bid_expired')
+            .then(() => bid.update({ deposit_status: 'REFUNDED' }))
+            .catch((e) => console.error(`[Cron] Deposit refund failed for expired bid ${bid.id}:`, e.message));
+        }
+      }
+      if (expiredBids.length > 0) console.log(`[Cron] Expired ${expiredBids.length} bids`);
     } catch (err) {
       console.error('[Cron] Bid expiry error:', err.message);
+    }
+  });
+
+  // Forfeit deposit when buyer wins bid but doesn't pay Escrow within 72 hours
+  cron.schedule('0 * * * *', async () => {
+    try {
+      const { Bid } = require('../models');
+      const { refundPayment } = require('./razorpayService');
+      const deadline = new Date(Date.now() - 72 * 60 * 60 * 1000);
+
+      const stalledOrders = await Order.findAll({
+        where: {
+          status:     'AWAITING_PAYMENT',
+          created_at: { [Op.lte]: deadline },
+        },
+        include: [{ model: Bid, as: 'bid' }],
+      });
+
+      for (const order of stalledOrders) {
+        try {
+          await order.update({ status: 'CANCELLED' });
+          const bid = order.bid;
+          if (bid && bid.deposit_payment_id && bid.deposit_status === 'PAID') {
+            // Forfeit — do NOT refund
+            await bid.update({ deposit_status: 'FORFEITED' });
+            console.log(`[Cron] Deposit FORFEITED for bid ${bid.id} (order ${order.id} unpaid for 72h)`);
+          }
+          if (io) {
+            io.to(`user_${order.buyer_id}`).emit('order_status_updated', { orderId: order.id, status: 'CANCELLED' });
+          }
+        } catch (e) {
+          console.error(`[Cron] Deposit forfeit failed for order ${order.id}:`, e.message);
+        }
+      }
+    } catch (err) {
+      console.error('[Cron] Deposit forfeit cron error:', err.message);
     }
   });
 };

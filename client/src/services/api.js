@@ -70,6 +70,11 @@ export const paymentsAPI = {
   getTransactions: () => api.get('/payments/transactions'),
 };
 
+export const depositsAPI = {
+  verify:      (d) => api.post('/payments/verify-deposit', d),
+  withdrawBid: (bidId) => api.post(`/payments/withdraw-bid/${bidId}`),
+};
+
 export const notificationsAPI = {
   getAll: () => api.get('/notifications'),
   markRead: (id) => api.put(`/notifications/${id}/read`),
