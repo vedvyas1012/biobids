@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import StatusBadge from '../components/shared/StatusBadge';
 import BidHistoryTable from '../components/shared/BidHistoryTable';
+import BidPriceChart from '../components/shared/BidPriceChart';
 import toast from 'react-hot-toast';
 
 export default function ListingDetail() {
@@ -132,8 +133,13 @@ export default function ListingDetail() {
             ) : null}
           </div>
 
-          {/* Right: Place Bid */}
-          <div>
+          {/* Right: Chart (supplier) or Place Bid (buyer) */}
+          <div className="space-y-4">
+            {/* Bid price trend chart — supplier view */}
+            {user?.role === 'supplier' && listing.supplier_id === user.id && (
+              <BidPriceChart bids={bidHistory} />
+            )}
+
             {user?.role === 'buyer' && ['ACTIVE', 'BIDDING'].includes(listing.status) && (
               <div className="card sticky top-4">
                 <h2 className="text-lg font-bold text-gray-800 mb-4">Place Your Bid</h2>
